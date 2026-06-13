@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from .config import settings
 from .database import Base, engine
+from . import models
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
