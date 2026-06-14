@@ -105,179 +105,142 @@ async function addColumnIfMissing(table, column, definition) {
 
 async function initDb() {
   await db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL UNIQUE,
-      hashed_password VARCHAR(255) NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_users_email (email)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+   CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(191) NOT NULL,
+  email VARCHAR(191) NOT NULL UNIQUE,
+  hashed_password VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NULL,
+  INDEX idx_users_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS password_otps (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      otp_hash VARCHAR(255) NOT NULL,
-      expires_at DATETIME NOT NULL,
-      consumed_at DATETIME NULL,
-      attempts INT NOT NULL DEFAULT 0,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      INDEX idx_password_otps_email (email),
-      INDEX idx_password_otps_expires (expires_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS password_otps (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  email VARCHAR(191) NOT NULL,
+  otp_hash VARCHAR(255) NOT NULL,
+  expires_at TIMESTAMP NULL,
+  consumed_at TIMESTAMP NULL,
+  attempts INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NULL,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS currencies (
-      code VARCHAR(10) PRIMARY KEY,
-      name VARCHAR(100) NOT NULL,
-      symbol VARCHAR(10) NOT NULL,
-      rate_to_inr DECIMAL(15, 6) NOT NULL DEFAULT 1,
-      precision_digits INT NOT NULL DEFAULT 2,
-      active TINYINT(1) NOT NULL DEFAULT 1,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS currencies (
+  code VARCHAR(10) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  symbol VARCHAR(10) NOT NULL,
+  rate_to_inr DECIMAL(15,6) NOT NULL DEFAULT 1,
+  precision_digits INT NOT NULL DEFAULT 2,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  updated_at TIMESTAMP NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS \`groups\` (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      description TEXT,
-      default_currency VARCHAR(10) NOT NULL DEFAULT 'INR',
-      emoji VARCHAR(50) NOT NULL DEFAULT 'Wallet',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `groups` (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(191) NOT NULL,
+  description TEXT,
+  default_currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+  emoji VARCHAR(50) NOT NULL DEFAULT 'Wallet',
+  created_at TIMESTAMP NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS group_members (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      group_id INT NOT NULL,
-      user_id INT NOT NULL,
-      joined_at DATE NOT NULL,
-      left_at DATE NULL,
-      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      INDEX idx_member_group_user (group_id, user_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS expenses (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  group_id INT NOT NULL,
+  title VARCHAR(191) NOT NULL,
+  description TEXT,
+  amount DECIMAL(15,2) NOT NULL,
+  currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+  converted_amount_inr DECIMAL(15,2) NOT NULL,
+  date DATE NOT NULL,
+  paid_by_id INT NOT NULL,
+  split_type VARCHAR(50) NOT NULL,
+  category VARCHAR(100) NOT NULL DEFAULT 'General',
+  merchant VARCHAR(191) NOT NULL DEFAULT '',
+  is_recurring TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NULL,
+  FOREIGN KEY(group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  FOREIGN KEY(paid_by_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS expenses (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      group_id INT NOT NULL,
-      title VARCHAR(255) NOT NULL,
-      description TEXT,
-      amount DECIMAL(15, 2) NOT NULL,
-      currency VARCHAR(10) NOT NULL DEFAULT 'INR',
-      converted_amount_inr DECIMAL(15, 2) NOT NULL,
-      date DATE NOT NULL,
-      paid_by_id INT NOT NULL,
-      split_type VARCHAR(50) NOT NULL,
-      category VARCHAR(100) NOT NULL DEFAULT 'General',
-      merchant VARCHAR(255) NOT NULL DEFAULT '',
-      is_recurring TINYINT(1) NOT NULL DEFAULT 0,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
-      FOREIGN KEY(paid_by_id) REFERENCES users(id) ON DELETE CASCADE,
-      INDEX idx_expense_group (group_id),
-      INDEX idx_expense_date (date),
-      INDEX idx_expense_paid_by (paid_by_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS settlements (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  group_id INT NOT NULL,
+  payer_id INT NOT NULL,
+  payee_id INT NOT NULL,
+  amount DECIMAL(15,2) NOT NULL,
+  currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+  converted_amount_inr DECIMAL(15,2) NOT NULL,
+  date DATE NOT NULL,
+  created_at TIMESTAMP NULL,
+  FOREIGN KEY(group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  FOREIGN KEY(payer_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY(payee_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS expense_participants (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      expense_id INT NOT NULL,
-      user_id INT NOT NULL,
-      amount_owed DECIMAL(15, 2) NOT NULL,
-      share_value DECIMAL(15, 2) NULL,
-      FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      INDEX idx_participant_expense (expense_id),
-      INDEX idx_participant_user (user_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS budgets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  group_id INT NOT NULL,
+  category VARCHAR(100) NOT NULL,
+  monthly_limit DECIMAL(15,2) NOT NULL,
+  currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+  created_at TIMESTAMP NULL,
+  FOREIGN KEY(group_id) REFERENCES `groups`(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS settlements (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      group_id INT NOT NULL,
-      payer_id INT NOT NULL,
-      payee_id INT NOT NULL,
-      amount DECIMAL(15, 2) NOT NULL,
-      currency VARCHAR(10) NOT NULL DEFAULT 'INR',
-      converted_amount_inr DECIMAL(15, 2) NOT NULL,
-      date DATE NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
-      FOREIGN KEY(payer_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(payee_id) REFERENCES users(id) ON DELETE CASCADE,
-      INDEX idx_settlement_group (group_id),
-      INDEX idx_settlement_payer (payer_id),
-      INDEX idx_settlement_payee (payee_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS import_sessions (
+  id VARCHAR(191) PRIMARY KEY,
+  group_id INT NOT NULL,
+  user_id INT NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'VALIDATED',
+  rows_count INT NOT NULL DEFAULT 0,
+  imported_count INT NOT NULL DEFAULT 0,
+  skipped_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NULL,
+  FOREIGN KEY(group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS budgets (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      group_id INT NOT NULL,
-      category VARCHAR(100) NOT NULL,
-      monthly_limit DECIMAL(15, 2) NOT NULL,
-      currency VARCHAR(10) NOT NULL DEFAULT 'INR',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
-      INDEX idx_budget_group (group_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS import_rows (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  session_id VARCHAR(191) NOT NULL,
+  row_number INT NOT NULL,
+  raw_data LONGTEXT NOT NULL,
+  row_hash VARCHAR(64) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+  action_taken VARCHAR(50) NULL,
+  created_expense_id INT NULL,
+  created_at TIMESTAMP NULL,
+  FOREIGN KEY(session_id) REFERENCES import_sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY(created_expense_id) REFERENCES expenses(id) ON DELETE SET NULL,
+  UNIQUE KEY uq_import_row (session_id, row_number)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS import_sessions (
-      id VARCHAR(255) PRIMARY KEY,
-      group_id INT NOT NULL,
-      user_id INT NOT NULL,
-      status VARCHAR(50) NOT NULL DEFAULT 'VALIDATED',
-      rows_count INT NOT NULL DEFAULT 0,
-      imported_count INT NOT NULL DEFAULT 0,
-      skipped_count INT NOT NULL DEFAULT 0,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS import_anomalies (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  session_id VARCHAR(191) NOT NULL,
+  row_number INT NOT NULL,
+  field_name VARCHAR(100),
+  issue VARCHAR(500) NOT NULL,
+  severity VARCHAR(50) NOT NULL,
+  recommended_action VARCHAR(50) NOT NULL DEFAULT 'REVIEW',
+  action_taken VARCHAR(50) NULL,
+  raw_data LONGTEXT NOT NULL,
+  resolved TINYINT(1) NOT NULL DEFAULT 0,
+  FOREIGN KEY(session_id) REFERENCES import_sessions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-    CREATE TABLE IF NOT EXISTS import_rows (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      session_id VARCHAR(255) NOT NULL,
-      row_number INT NOT NULL,
-      raw_data JSON NOT NULL,
-      row_hash VARCHAR(64) NOT NULL,
-      status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-      action_taken VARCHAR(50) NULL,
-      created_expense_id INT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(session_id) REFERENCES import_sessions(id) ON DELETE CASCADE,
-      FOREIGN KEY(created_expense_id) REFERENCES expenses(id) ON DELETE SET NULL,
-      UNIQUE KEY uq_import_row (session_id, row_number),
-      INDEX idx_import_rows_session (session_id),
-      INDEX idx_import_rows_hash (row_hash)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    CREATE TABLE IF NOT EXISTS import_anomalies (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      session_id VARCHAR(255) NOT NULL,
-      row_number INT NOT NULL,
-      field_name VARCHAR(100),
-      issue VARCHAR(500) NOT NULL,
-      severity VARCHAR(50) NOT NULL,
-      recommended_action VARCHAR(50) NOT NULL DEFAULT 'REVIEW',
-      action_taken VARCHAR(50) NULL,
-      raw_data JSON NOT NULL,
-      resolved TINYINT(1) NOT NULL DEFAULT 0,
-      FOREIGN KEY(session_id) REFERENCES import_sessions(id) ON DELETE CASCADE,
-      INDEX idx_anomaly_session (session_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    CREATE TABLE IF NOT EXISTS audit_logs (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NULL,
-      action VARCHAR(255) NOT NULL,
-      entity_type VARCHAR(100) NOT NULL,
-      entity_id INT NULL,
-      details TEXT,
-      timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
-      INDEX idx_audit_timestamp (timestamp)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `);
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
+  action VARCHAR(191) NOT NULL,
+  entity_type VARCHAR(100) NOT NULL,
+  entity_id INT NULL,
+  details TEXT,
+  timestamp TIMESTAMP NULL,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
   await addColumnIfMissing("groups", "emoji", "VARCHAR(50) NOT NULL DEFAULT 'Wallet'");
   await addColumnIfMissing("expenses", "category", "VARCHAR(100) NOT NULL DEFAULT 'General'");
