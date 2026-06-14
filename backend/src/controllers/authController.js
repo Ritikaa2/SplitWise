@@ -46,7 +46,7 @@ exports.forgotPassword = async (req, res) => {
     if (!email) return res.status(400).json({ error: "Email is required" });
 
     const pool = await getPool();
-    const normalizedEmail = email.toLowerCase();
+    const normalizedEmail = String(email).trim().toLowerCase();
     const [users] = await pool.query("SELECT id FROM users WHERE email = ?", [normalizedEmail]);
 
     if (!users.length) {
@@ -71,6 +71,7 @@ exports.forgotPassword = async (req, res) => {
     };
     if (process.env.NODE_ENV !== "production") {
       response.dev_otp = otp;
+      response.verification_code = otp;
     }
     res.json(response);
   } catch (err) {
@@ -89,7 +90,7 @@ exports.resetPassword = async (req, res) => {
     }
 
     const pool = await getPool();
-    const normalizedEmail = email.toLowerCase();
+    const normalizedEmail = String(email).trim().toLowerCase();
     const [users] = await pool.query("SELECT id FROM users WHERE email = ?", [normalizedEmail]);
     if (!users.length) return res.status(400).json({ error: "Invalid or expired OTP" });
 

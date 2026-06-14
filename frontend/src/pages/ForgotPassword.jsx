@@ -20,7 +20,7 @@ export default function ForgotPassword() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState(params.get("token") ?? "");
+  const [otp, setOtp] = useState(params.get("token") ?? params.get("otp") ?? params.get("code") ?? "");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [devOtp, setDevOtp] = useState("");
@@ -31,9 +31,10 @@ export default function ForgotPassword() {
   const forgot = useMutation({
     mutationFn: () => api.forgotPassword(email.trim().toLowerCase()),
     onSuccess: (data) => {
-      if (data.dev_otp) {
-        setDevOtp(data.dev_otp);
-        setOtp(data.dev_otp);
+      const code = data.dev_otp ?? data.verification_code ?? data.otp ?? "";
+      if (code) {
+        setDevOtp(code);
+        setOtp(code);
       }
     },
   });
