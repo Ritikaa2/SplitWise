@@ -7,10 +7,16 @@ async function request(path, options = {}) {
         headers.set("Content-Type", "application/json");
     if (token)
         headers.set("Authorization", `Bearer ${token}`);
-    const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    let res;
+    try {
+        res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    } catch (err) {
+        console.error("API Connection Error:", err);
+        throw new Error(`Cannot reach the SplitWise API at ${API_URL}. Please start the backend and try again.`);
+    }
     if (!res.ok) {
         const detail = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(detail.detail ?? "Request failed");
+        throw new Error(detail.detail ?? "Something went wrong. Please try again.");
     }
     if (res.status === 204)
         return undefined;

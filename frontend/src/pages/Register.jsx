@@ -1,12 +1,26 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
-import { Chrome, Eye, EyeOff, Loader2, LockKeyhole, Mail, UserRound } from "lucide-react";
+import { Chrome, Eye, EyeOff, FileCheck2, Loader2, LockKeyhole, Mail, ShieldCheck, UserRound, UsersRound, WalletCards } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
+
+const onboarding = [
+  ["Create groups", "Separate home, travel, team and food spending.", UsersRound],
+  ["Review imports", "Approve duplicate, refund and settlement-looking rows.", FileCheck2],
+  ["Settle clearly", "Show who pays whom and how every balance was formed.", WalletCards],
+];
+
+const personas = [
+  ["Aisha", "Receives final settlement and exports a report."],
+  ["Rohan", "Sees every balance with an expense trail."],
+  ["Priya", "Gets USD rows converted before INR totals."],
+  ["Sam", "Is protected by accurate join dates."],
+  ["Meera", "Reviews duplicate rows before import."],
+];
 
 function emailLooksValid(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -66,12 +80,12 @@ export default function Register() {
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-8">
-      <div className="grid w-full max-w-6xl gap-6 lg:grid-cols-[460px_1fr]">
-        <Card>
+      <div className="grid w-full max-w-6xl gap-6 lg:grid-cols-[470px_1fr]">
+        <Card className="p-6 md:p-7">
           <p className="text-sm font-semibold uppercase text-primary">Create account</p>
-          <h1 className="mt-2 text-3xl font-black text-slate-950">Start tracking clean balances</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Built for Aisha, Rohan, Priya, Sam, Meera, and any flat that needs explainable settlements.
+          <h1 className="mt-2 text-3xl font-black text-ink">Start with clean balances</h1>
+          <p className="mt-2 text-sm leading-6 text-ink/60">
+            Create your own workspace or use the built-in demo to inspect beautiful groups, imports, settings and reports.
           </p>
 
           <Button
@@ -90,10 +104,10 @@ export default function Register() {
           {googleMessage && <p className="mt-2 text-sm text-warning">{googleMessage}</p>}
 
           <form onSubmit={submit} className="mt-5 grid gap-4" noValidate>
-            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            <label className="grid gap-2 text-sm font-semibold text-ink/70">
               Full name
               <span className="relative">
-                <UserRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                <UserRound className="absolute left-3 top-3.5 h-4 w-4 text-ink/35" />
                 <Input
                   className="pl-9"
                   placeholder="Aisha Sharma"
@@ -105,10 +119,10 @@ export default function Register() {
               {submitted && !validation.name && <span className="text-xs text-danger">Name must be at least 2 characters.</span>}
             </label>
 
-            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            <label className="grid gap-2 text-sm font-semibold text-ink/70">
               Email
               <span className="relative">
-                <Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                <Mail className="absolute left-3 top-3.5 h-4 w-4 text-ink/35" />
                 <Input
                   className="pl-9"
                   type="email"
@@ -121,10 +135,10 @@ export default function Register() {
               {(submitted || form.email) && !validation.email && <span className="text-xs text-danger">Use a valid email address.</span>}
             </label>
 
-            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            <label className="grid gap-2 text-sm font-semibold text-ink/70">
               Password
               <span className="relative">
-                <LockKeyhole className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                <LockKeyhole className="absolute left-3 top-3.5 h-4 w-4 text-ink/35" />
                 <Input
                   className="pl-9 pr-10"
                   type={showPassword ? "text" : "password"}
@@ -135,7 +149,7 @@ export default function Register() {
                 />
                 <button
                   type="button"
-                  className="absolute right-3 top-3 text-slate-500 hover:text-slate-900"
+                  className="absolute right-3 top-3 text-ink/55 hover:text-ink"
                   onClick={() => setShowPassword((value) => !value)}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
@@ -144,13 +158,13 @@ export default function Register() {
               </span>
               <span className="grid grid-cols-4 gap-1">
                 {Array.from({ length: 4 }).map((_, index) => (
-                  <span key={index} className={`h-1.5 rounded ${index < score ? "bg-primary" : "bg-slate-200"}`} />
+                  <span key={index} className={`h-1.5 rounded ${index < score ? "bg-primary" : "bg-ink/10"}`} />
                 ))}
               </span>
               {(submitted || form.password) && !validation.password && <span className="text-xs text-danger">Password must be at least 8 characters.</span>}
             </label>
 
-            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            <label className="grid gap-2 text-sm font-semibold text-ink/70">
               Confirm password
               <Input
                 type={showPassword ? "text" : "password"}
@@ -162,7 +176,7 @@ export default function Register() {
               {(submitted || form.confirm) && !validation.confirm && <span className="text-xs text-danger">Passwords do not match.</span>}
             </label>
 
-            <label className="flex items-start gap-2 text-sm text-slate-600">
+            <label className="flex items-start gap-2 rounded-lg border border-ink/10 bg-background/80 p-3 text-sm text-ink/60">
               <input className="mt-1" type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
               I understand imports can flag duplicates, refunds, settlement rows, and membership-date conflicts for approval.
             </label>
@@ -175,30 +189,47 @@ export default function Register() {
             </Button>
           </form>
 
-          <p className="mt-5 text-center text-sm text-slate-500">
+          <p className="mt-5 text-center text-sm text-ink/55">
             Have an account? <Link className="font-semibold text-primary" to="/login">Sign in</Link>
           </p>
         </Card>
 
-        <section className="hidden rounded-lg border border-slate-200 bg-white p-6 shadow-card lg:block">
-          <div className="grid h-full content-between gap-6">
+        <section className="page-hero soft-grid hidden p-8 shadow-lift lg:block">
+          <div className="grid h-full content-between gap-8">
             <div>
-              <p className="text-sm font-semibold uppercase text-secondary">Product controls</p>
-              <h2 className="mt-2 text-4xl font-black text-slate-950">Everything reviewers will ask you to explain.</h2>
+              <div className="inline-flex items-center gap-2 rounded-lg border border-secondary/20 bg-secondary/10 px-3 py-2 text-sm font-bold text-secondary">
+                <ShieldCheck className="h-4 w-4" />
+                Product controls included
+              </div>
+              <h2 className="mt-6 max-w-2xl text-4xl font-black leading-tight text-ink">
+                Everything reviewers will ask you to explain, already represented.
+              </h2>
+              <p className="mt-4 max-w-xl text-sm leading-6 text-ink/60">
+                The app includes sample people, groups, import policies, settlement notes and reporting content so every screen has substance.
+              </p>
             </div>
-            <div className="grid gap-3">
-              {[
-                ["Aisha", "One settlement plan: who pays whom, how much."],
-                ["Rohan", "Every balance has an expense trail."],
-                ["Priya", "USD rows convert before INR balances are calculated."],
-                ["Sam", "Join and leave dates filter membership liability."],
-                ["Meera", "Duplicates go to an approval queue."],
-              ].map(([name, copy]) => (
-                <div key={name} className="rounded-lg border border-slate-200 bg-background p-4">
-                  <p className="font-semibold text-slate-950">{name}</p>
-                  <p className="mt-1 text-sm text-slate-600">{copy}</p>
+
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                {onboarding.map(([title, copy, Icon]) => (
+                  <div key={title} className="rounded-lg border border-ink/10 bg-white/80 p-4">
+                    <Icon className="mb-3 h-5 w-5 text-primary" />
+                    <p className="font-black text-ink">{title}</p>
+                    <p className="mt-2 text-xs leading-5 text-ink/55">{copy}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-lg border border-ink/10 bg-white/80 p-4">
+                <p className="text-sm font-bold uppercase text-ink/45">Demo members</p>
+                <div className="mt-3 grid gap-2">
+                  {personas.map(([name, copy]) => (
+                    <div key={name} className="grid grid-cols-[84px_1fr] gap-3 rounded-lg bg-background/80 p-3 text-sm">
+                      <span className="font-black text-ink">{name}</span>
+                      <span className="text-ink/60">{copy}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         </section>

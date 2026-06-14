@@ -1,4 +1,4 @@
-const { db } = require("../config/database");
+const { db, runInTransaction } = require("../config/database");
 const { HttpError } = require("../utils/errors");
 const { convertToInr, round2 } = require("../utils/money");
 const { isActiveMember } = require("./groupModel");
@@ -33,21 +33,21 @@ function calculateSplits(amount, splitType, participants) {
   throw new HttpError(400, "Invalid split type");
 }
 
-function expenseResponse(expenseId) {
-  const expense = db.prepare(`
+async function expenseResponse(expenseId) {
+  const expense = await db.prepare(`
     SELECT e.*, u.name AS payer_name, u.email AS payer_email, u.created_at AS payer_created_at
     FROM expenses e
     JOIN users u ON u.id = e.paid_by_id
     WHERE e.id = ?
   `).get(Number(expenseId));
   if (!expense) return null;
-  const participants = db.prepare(`
+  const participants = (await db.prepare(`
     SELECT ep.*, u.name, u.email, u.created_at AS user_created_at
     FROM expense_participants ep
     JOIN users u ON u.id = ep.user_id
     WHERE ep.expense_id = ?
     ORDER BY u.name
-  `).all(Number(expenseId)).map((row) => ({
+  `).all(Number(expenseId))).map((row) => ({
     id: row.id,
     expense_id: row.expense_id,
     user_id: row.user_id,
@@ -75,13 +75,13 @@ function expenseResponse(expenseId) {
   };
 }
 
-function listExpenses(groupId) {
-  return db.prepare("SELECT id FROM expenses WHERE group_id = ? ORDER BY date DESC, id DESC")
-    .all(Number(groupId))
-    .map((row) => expenseResponse(row.id));
+async function listExpenses(groupId) {
+  const rows = await db.prepare("SELECT id FROM expenses WHERE group_id = ? ORDER BY date DESC, id DESC")
+    .all(Number(groupId));
+  return Promise.all(rows.map((row) => expenseResponse(row.id)));
 }
 
-function createExpense(groupId, payload, actingUserId) {
+async function createExpense(groupId, payload, actingUserId) {
   const splitType = String(payload.split_type || "").toUpperCase();
   const currency = String(payload.currency || "INR").toUpperCase();
   const amount = Number(payload.amount);
@@ -89,19 +89,19 @@ function createExpense(groupId, payload, actingUserId) {
   if (!payload.title) throw new HttpError(400, "Title is required");
   if (!amount || amount <= 0) throw new HttpError(400, "Amount must be greater than zero");
   if (!["INR", "USD"].includes(currency)) throw new HttpError(400, "Only INR and USD are supported");
-  if (!isActiveMember(groupId, Number(payload.paid_by_id), date)) {
+  if (!(await isActiveMember(groupId, Number(payload.paid_by_id), date))) {
     throw new HttpError(400, "Payer was not active in the group on the expense date");
   }
   for (const participant of payload.participants || []) {
-    if (!isActiveMember(groupId, Number(participant.user_id), date)) {
+    if (!(await isActiveMember(groupId, Number(participant.user_id), date))) {
       throw new HttpError(400, `Participant ${participant.user_id} was not active in the group on the expense date`);
     }
   }
   const shares = calculateSplits(amount, splitType, payload.participants || []);
   const converted = convertToInr(amount, currency);
 
-  const tx = db.transaction(() => {
-    const result = db.prepare(`
+  const expenseId = await runInTransaction(async () => {
+    const result = await db.prepare(`
       INSERT INTO expenses (group_id, title, description, amount, currency, converted_amount_inr, date, paid_by_id, split_type, category, merchant, is_recurring)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -119,33 +119,103 @@ function createExpense(groupId, payload, actingUserId) {
       payload.is_recurring ? 1 : 0,
     );
     const expenseId = Number(result.lastInsertRowid);
-    payload.participants.forEach((participant, index) => {
-      db.prepare("INSERT INTO expense_participants (expense_id, user_id, amount_owed, share_value) VALUES (?, ?, ?, ?)")
+    for (const [index, participant] of payload.participants.entries()) {
+      await db.prepare("INSERT INTO expense_participants (expense_id, user_id, amount_owed, share_value) VALUES (?, ?, ?, ?)")
         .run(expenseId, Number(participant.user_id), shares[index], participant.share_value ?? null);
-    });
-    db.prepare("INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)")
+    }
+    await db.prepare("INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)")
       .run(actingUserId, "EXPENSE_CREATED", "expense", expenseId, payload.title);
     return expenseId;
   });
 
-  return expenseResponse(tx());
+  return expenseResponse(expenseId);
 }
 
-function calculateGroupBalances(groupId) {
+async function updateExpense(expenseId, payload, actingUserId) {
+  const existing = await db.prepare("SELECT * FROM expenses WHERE id = ?").get(Number(expenseId));
+  if (!existing) throw new HttpError(404, "Expense not found");
+  const splitType = String(payload.split_type || existing.split_type).toUpperCase();
+  const currency = String(payload.currency || existing.currency).toUpperCase();
+  const amount = Number(payload.amount ?? existing.amount);
+  const date = payload.date || existing.date;
+  const paidById = Number(payload.paid_by_id || existing.paid_by_id);
+  const participants = payload.participants || (await db.prepare(`
+    SELECT user_id, share_value
+    FROM expense_participants
+    WHERE expense_id = ?
+  `).all(Number(expenseId)));
+
+  if (!payload.title && !existing.title) throw new HttpError(400, "Title is required");
+  if (!amount || amount <= 0) throw new HttpError(400, "Amount must be greater than zero");
+  if (!["INR", "USD"].includes(currency)) throw new HttpError(400, "Only INR and USD are supported");
+  if (!(await isActiveMember(existing.group_id, paidById, date))) {
+    throw new HttpError(400, "Payer was not active in the group on the expense date");
+  }
+  for (const participant of participants) {
+    if (!(await isActiveMember(existing.group_id, Number(participant.user_id), date))) {
+      throw new HttpError(400, `Participant ${participant.user_id} was not active in the group on the expense date`);
+    }
+  }
+
+  const shares = calculateSplits(amount, splitType, participants);
+  const converted = convertToInr(amount, currency);
+
+  await runInTransaction(async () => {
+    await db.prepare(`
+      UPDATE expenses
+      SET title = ?, description = ?, amount = ?, currency = ?, converted_amount_inr = ?, date = ?,
+        paid_by_id = ?, split_type = ?, category = ?, merchant = ?, is_recurring = ?
+      WHERE id = ?
+    `).run(
+      payload.title || existing.title,
+      payload.description ?? existing.description ?? "",
+      amount,
+      currency,
+      converted,
+      date,
+      paidById,
+      splitType,
+      payload.category || existing.category || "General",
+      payload.merchant ?? existing.merchant ?? "",
+      payload.is_recurring === undefined ? existing.is_recurring : (payload.is_recurring ? 1 : 0),
+      Number(expenseId),
+    );
+    await db.prepare("DELETE FROM expense_participants WHERE expense_id = ?").run(Number(expenseId));
+    for (const [index, participant] of participants.entries()) {
+      await db.prepare("INSERT INTO expense_participants (expense_id, user_id, amount_owed, share_value) VALUES (?, ?, ?, ?)")
+        .run(Number(expenseId), Number(participant.user_id), shares[index], participant.share_value ?? null);
+    }
+    await db.prepare("INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)")
+      .run(actingUserId, "EXPENSE_UPDATED", "expense", Number(expenseId), payload.title || existing.title);
+  });
+
+  return expenseResponse(expenseId);
+}
+
+async function deleteExpense(expenseId, actingUserId) {
+  const existing = await db.prepare("SELECT * FROM expenses WHERE id = ?").get(Number(expenseId));
+  if (!existing) throw new HttpError(404, "Expense not found");
+  await db.prepare("DELETE FROM expenses WHERE id = ?").run(Number(expenseId));
+  await db.prepare("INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)")
+    .run(actingUserId, "EXPENSE_DELETED", "expense", Number(expenseId), existing.title);
+  return { message: "Expense deleted" };
+}
+
+async function calculateGroupBalances(groupId) {
   const balances = new Map();
-  for (const member of db.prepare("SELECT user_id FROM group_members WHERE group_id = ?").all(Number(groupId))) {
+  for (const member of await db.prepare("SELECT user_id FROM group_members WHERE group_id = ?").all(Number(groupId))) {
     balances.set(member.user_id, 0);
   }
-  const expenses = db.prepare("SELECT * FROM expenses WHERE group_id = ?").all(Number(groupId));
+  const expenses = await db.prepare("SELECT * FROM expenses WHERE group_id = ?").all(Number(groupId));
   for (const expense of expenses) {
     balances.set(expense.paid_by_id, round2((balances.get(expense.paid_by_id) || 0) + expense.converted_amount_inr));
-    const participants = db.prepare("SELECT * FROM expense_participants WHERE expense_id = ?").all(expense.id);
+    const participants = await db.prepare("SELECT * FROM expense_participants WHERE expense_id = ?").all(expense.id);
     for (const participant of participants) {
       const inrShare = expense.amount > 0 ? expense.converted_amount_inr * (participant.amount_owed / expense.amount) : 0;
       balances.set(participant.user_id, round2((balances.get(participant.user_id) || 0) - inrShare));
     }
   }
-  const settlements = db.prepare("SELECT * FROM settlements WHERE group_id = ?").all(Number(groupId));
+  const settlements = await db.prepare("SELECT * FROM settlements WHERE group_id = ?").all(Number(groupId));
   for (const settlement of settlements) {
     balances.set(settlement.payer_id, round2((balances.get(settlement.payer_id) || 0) + settlement.converted_amount_inr));
     balances.set(settlement.payee_id, round2((balances.get(settlement.payee_id) || 0) - settlement.converted_amount_inr));
@@ -153,8 +223,8 @@ function calculateGroupBalances(groupId) {
   return balances;
 }
 
-function simplifyDebts(groupId) {
-  const balances = calculateGroupBalances(groupId);
+async function simplifyDebts(groupId) {
+  const balances = await calculateGroupBalances(groupId);
   const debtors = [];
   const creditors = [];
   for (const [userId, amount] of balances.entries()) {
@@ -168,8 +238,8 @@ function simplifyDebts(groupId) {
     const debtor = debtors[0];
     const creditor = creditors[0];
     const amount = round2(Math.min(Math.abs(debtor[1]), creditor[1]));
-    const from = db.prepare("SELECT * FROM users WHERE id = ?").get(debtor[0]);
-    const to = db.prepare("SELECT * FROM users WHERE id = ?").get(creditor[0]);
+    const from = await db.prepare("SELECT * FROM users WHERE id = ?").get(debtor[0]);
+    const to = await db.prepare("SELECT * FROM users WHERE id = ?").get(creditor[0]);
     plan.push({
       from_user_id: debtor[0],
       from_user_name: from?.name || `User ${debtor[0]}`,
@@ -186,10 +256,10 @@ function simplifyDebts(groupId) {
   return plan;
 }
 
-function categoryBreakdown(groupIds) {
+async function categoryBreakdown(groupIds) {
   if (!groupIds.length) return [];
   const placeholders = groupIds.map(() => "?").join(",");
-  const rows = db.prepare(`
+  const rows = await db.prepare(`
     SELECT category AS name, SUM(converted_amount_inr) AS amount
     FROM expenses
     WHERE group_id IN (${placeholders})
@@ -205,6 +275,8 @@ module.exports = {
   expenseResponse,
   listExpenses,
   createExpense,
+  updateExpense,
+  deleteExpense,
   calculateGroupBalances,
   simplifyDebts,
   categoryBreakdown,

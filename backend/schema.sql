@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `groups` (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     default_currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+    emoji VARCHAR(50) NOT NULL DEFAULT 'Wallet',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -47,6 +48,9 @@ CREATE TABLE IF NOT EXISTS expenses (
     date DATE NOT NULL,
     paid_by_id INT NOT NULL,
     split_type VARCHAR(50) NOT NULL, -- EQUAL, EXACT, PERCENTAGE, SHARES
+    category VARCHAR(100) NOT NULL DEFAULT 'General',
+    merchant VARCHAR(255) NOT NULL DEFAULT '',
+    is_recurring TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
     FOREIGN KEY (paid_by_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -87,7 +91,19 @@ CREATE TABLE IF NOT EXISTS settlements (
     INDEX idx_settlement_payee (payee_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 7. Exchange Rates Table
+-- 7. Budgets Table
+CREATE TABLE IF NOT EXISTS budgets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    group_id INT NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    monthly_limit DECIMAL(15, 2) NOT NULL,
+    currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+    INDEX idx_budget_group (group_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 8. Exchange Rates Table
 CREATE TABLE IF NOT EXISTS exchange_rates (
     id INT AUTO_INCREMENT PRIMARY KEY,
     from_currency VARCHAR(10) NOT NULL,
@@ -97,18 +113,18 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
     UNIQUE KEY uq_exchange_rate (from_currency, to_currency, effective_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 8. Import Sessions Table
+-- 9. Import Sessions Table
 CREATE TABLE IF NOT EXISTS import_sessions (
     id VARCHAR(255) PRIMARY KEY, -- UUID
     group_id INT NOT NULL,
     user_id INT NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'UPLOADED', -- UPLOADED, VALIDATED, APPROVED, COMPLETED, FAILED
+    status VARCHAR(50) NOT NULL DEFAULT 'VALIDATED', -- UPLOADED, VALIDATED, APPROVED, COMPLETED, FAILED
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 9. Import Anomalies Table
+-- 10. Import Anomalies Table
 CREATE TABLE IF NOT EXISTS import_anomalies (
     id INT AUTO_INCREMENT PRIMARY KEY,
     session_id VARCHAR(255) NOT NULL,
@@ -122,7 +138,7 @@ CREATE TABLE IF NOT EXISTS import_anomalies (
     INDEX idx_anomaly_session (session_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 10. Audit Logs Table
+-- 11. Audit Logs Table
 CREATE TABLE IF NOT EXISTS audit_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NULL,

@@ -1,14 +1,14 @@
 const { db } = require("../config/database");
 const { HttpError } = require("../utils/errors");
 
-function requireGroupMember(groupId, userId) {
-  const member = db.prepare("SELECT * FROM group_members WHERE group_id = ? AND user_id = ?").get(Number(groupId), Number(userId));
+async function requireGroupMember(groupId, userId) {
+  const member = await db.prepare("SELECT * FROM group_members WHERE group_id = ? AND user_id = ?").get(Number(groupId), Number(userId));
   if (!member) throw new HttpError(403, "You are not a member of this group");
   return member;
 }
 
-function isActiveMember(groupId, userId, date) {
-  const member = db.prepare(`
+async function isActiveMember(groupId, userId, date) {
+  const member = await db.prepare(`
     SELECT * FROM group_members
     WHERE group_id = ? AND user_id = ?
     ORDER BY joined_at DESC
@@ -18,16 +18,16 @@ function isActiveMember(groupId, userId, date) {
   return member.joined_at <= date && (!member.left_at || member.left_at >= date);
 }
 
-function getGroupDetail(groupId) {
-  const group = db.prepare("SELECT * FROM groups WHERE id = ?").get(Number(groupId));
+async function getGroupDetail(groupId) {
+  const group = await db.prepare("SELECT * FROM groups WHERE id = ?").get(Number(groupId));
   if (!group) return null;
-  const members = db.prepare(`
+  const members = (await db.prepare(`
     SELECT gm.*, u.name, u.email, u.created_at AS user_created_at
     FROM group_members gm
     JOIN users u ON u.id = gm.user_id
     WHERE gm.group_id = ?
     ORDER BY gm.left_at IS NOT NULL, gm.joined_at, u.name
-  `).all(Number(groupId)).map((row) => ({
+  `).all(Number(groupId))).map((row) => ({
     id: row.id,
     group_id: row.group_id,
     user_id: row.user_id,
@@ -35,13 +35,13 @@ function getGroupDetail(groupId) {
     left_at: row.left_at,
     user: { id: row.user_id, name: row.name, email: row.email, created_at: row.user_created_at },
   }));
-  const budgets = db.prepare("SELECT * FROM budgets WHERE group_id = ? ORDER BY category").all(Number(groupId));
+  const budgets = await db.prepare("SELECT * FROM budgets WHERE group_id = ? ORDER BY category").all(Number(groupId));
   return { ...group, members, budgets };
 }
 
-function listGroups(userId, search = "") {
+async function listGroups(userId, search = "") {
   const term = String(search || "").toLowerCase();
-  return db.prepare(`
+  return (await db.prepare(`
     SELECT g.*,
       COUNT(DISTINCT gm_all.user_id) AS member_count,
       COALESCE(SUM(e.converted_amount_inr), 0) AS total_spend
@@ -51,53 +51,89 @@ function listGroups(userId, search = "") {
     LEFT JOIN expenses e ON e.group_id = g.id
     GROUP BY g.id
     ORDER BY g.created_at DESC
-  `).all(Number(userId)).filter((group) => !term || group.name.toLowerCase().includes(term));
+  `).all(Number(userId))).filter((group) => !term || group.name.toLowerCase().includes(term));
 }
 
-function createGroup(payload, ownerId) {
-  const result = db.prepare("INSERT INTO groups (name, description, default_currency, emoji) VALUES (?, ?, ?, ?)")
+async function createGroup(payload, ownerId) {
+  const result = await db.prepare("INSERT INTO groups (name, description, default_currency, emoji) VALUES (?, ?, ?, ?)")
     .run(payload.name, payload.description || "", payload.default_currency || "INR", payload.emoji || "Wallet");
   const groupId = Number(result.lastInsertRowid);
   const today = new Date().toISOString().slice(0, 10);
-  db.prepare("INSERT INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)").run(groupId, ownerId, today);
+  await db.prepare("INSERT INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)").run(groupId, ownerId, today);
   for (const member of payload.members || []) {
-    const target = db.prepare("SELECT * FROM users WHERE email = ?").get(String(member.user_email || "").toLowerCase());
-    if (target) db.prepare("INSERT INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)").run(groupId, target.id, member.joined_at || today);
+    const target = await db.prepare("SELECT * FROM users WHERE email = ?").get(String(member.user_email || "").toLowerCase());
+    if (target) await db.prepare("INSERT INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)").run(groupId, target.id, member.joined_at || today);
   }
   for (const budget of payload.budgets || []) {
     if (budget.category && Number(budget.monthly_limit) > 0) {
-      db.prepare("INSERT INTO budgets (group_id, category, monthly_limit, currency) VALUES (?, ?, ?, ?)")
+      await db.prepare("INSERT INTO budgets (group_id, category, monthly_limit, currency) VALUES (?, ?, ?, ?)")
         .run(groupId, budget.category, Number(budget.monthly_limit), budget.currency || "INR");
     }
   }
   return getGroupDetail(groupId);
 }
 
-function addMember(groupId, payload) {
-  const target = db.prepare("SELECT * FROM users WHERE email = ?").get(String(payload.user_email || "").toLowerCase());
+async function updateGroup(groupId, payload) {
+  const existing = await db.prepare("SELECT * FROM groups WHERE id = ?").get(Number(groupId));
+  if (!existing) throw new HttpError(404, "Group not found");
+  await db.prepare(`
+    UPDATE groups
+    SET name = ?, description = ?, default_currency = ?, emoji = ?
+    WHERE id = ?
+  `).run(
+    payload.name || existing.name,
+    payload.description ?? existing.description,
+    payload.default_currency || existing.default_currency,
+    payload.emoji || existing.emoji,
+    Number(groupId),
+  );
+  return getGroupDetail(groupId);
+}
+
+async function deleteGroup(groupId) {
+  const result = await db.prepare("DELETE FROM groups WHERE id = ?").run(Number(groupId));
+  if (!result.changes) throw new HttpError(404, "Group not found");
+  return { message: "Group deleted" };
+}
+
+async function addMember(groupId, payload) {
+  const target = await db.prepare("SELECT * FROM users WHERE email = ?").get(String(payload.user_email || "").toLowerCase());
   if (!target) throw new HttpError(400, "User with this email does not exist");
-  const result = db.prepare("INSERT INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)")
+  const result = await db.prepare("INSERT INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)")
     .run(Number(groupId), target.id, payload.joined_at || new Date().toISOString().slice(0, 10));
-  return getGroupDetail(groupId).members.find((member) => member.id === Number(result.lastInsertRowid));
+  return (await getGroupDetail(groupId)).members.find((member) => member.id === Number(result.lastInsertRowid));
 }
 
-function removeMember(groupId, userId) {
-  db.prepare("UPDATE group_members SET left_at = ? WHERE group_id = ? AND user_id = ? AND left_at IS NULL")
+async function removeMember(groupId, userId) {
+  await db.prepare("UPDATE group_members SET left_at = ? WHERE group_id = ? AND user_id = ? AND left_at IS NULL")
     .run(new Date().toISOString().slice(0, 10), Number(groupId), Number(userId));
-  return getGroupDetail(groupId).members.find((member) => member.user_id === Number(userId));
+  return (await getGroupDetail(groupId)).members.find((member) => member.user_id === Number(userId));
 }
 
-function upsertBudget(groupId, payload) {
+async function updateMember(groupId, userId, payload) {
+  const member = await db.prepare(`
+    SELECT * FROM group_members
+    WHERE group_id = ? AND user_id = ?
+    ORDER BY joined_at DESC
+    LIMIT 1
+  `).get(Number(groupId), Number(userId));
+  if (!member) throw new HttpError(404, "Member not found");
+  await db.prepare("UPDATE group_members SET joined_at = ?, left_at = ? WHERE id = ?")
+    .run(payload.joined_at || member.joined_at, payload.left_at || null, member.id);
+  return (await getGroupDetail(groupId)).members.find((item) => item.id === member.id);
+}
+
+async function upsertBudget(groupId, payload) {
   if (!payload.category || Number(payload.monthly_limit) <= 0) throw new HttpError(400, "Category and monthly limit are required");
-  const existing = db.prepare("SELECT * FROM budgets WHERE group_id = ? AND lower(category) = lower(?)").get(Number(groupId), payload.category);
+  const existing = await db.prepare("SELECT * FROM budgets WHERE group_id = ? AND lower(category) = lower(?)").get(Number(groupId), payload.category);
   if (existing) {
-    db.prepare("UPDATE budgets SET monthly_limit = ?, currency = ? WHERE id = ?")
+    await db.prepare("UPDATE budgets SET monthly_limit = ?, currency = ? WHERE id = ?")
       .run(Number(payload.monthly_limit), payload.currency || "INR", existing.id);
   } else {
-    db.prepare("INSERT INTO budgets (group_id, category, monthly_limit, currency) VALUES (?, ?, ?, ?)")
+    await db.prepare("INSERT INTO budgets (group_id, category, monthly_limit, currency) VALUES (?, ?, ?, ?)")
       .run(Number(groupId), payload.category, Number(payload.monthly_limit), payload.currency || "INR");
   }
-  return getGroupDetail(groupId).budgets;
+  return (await getGroupDetail(groupId)).budgets;
 }
 
 module.exports = {
@@ -106,7 +142,10 @@ module.exports = {
   getGroupDetail,
   listGroups,
   createGroup,
+  updateGroup,
+  deleteGroup,
   addMember,
   removeMember,
+  updateMember,
   upsertBudget,
 };

@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, FileUp, Home, LogOut, Settings, Sparkles, Users, WalletCards } from "lucide-react";
+import { BarChart3, FileUp, Home, LogOut, Settings, Sparkles, TrendingUp, Users, WalletCards } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useAuth } from "../../store/auth";
 import { api } from "../../lib/api";
@@ -27,34 +27,50 @@ export function AppShell() {
     .toUpperCase();
 
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[292px_1fr]">
-      <aside className="sticky top-0 z-20 border-b border-ink/10 bg-cream/92 p-3 shadow-card backdrop-blur md:h-screen md:border-b-0 md:border-r md:p-5">
+    <div className="min-h-screen md:grid md:grid-cols-[304px_1fr]">
+      <aside className="sticky top-0 z-20 border-b border-ink/10 bg-white/85 p-3 shadow-card backdrop-blur-xl md:h-screen md:border-b-0 md:border-r md:p-5">
         <div className="flex h-full items-center justify-between gap-3 md:flex-col md:items-stretch">
           <div className="min-w-0">
             <div className="hidden md:block">
               <div className="flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center rounded-lg bg-primary text-lg font-black text-white shadow-glow">S</div>
+                <div className="grid h-11 w-11 place-items-center rounded-lg bg-primary text-lg font-black text-[#06111f] shadow-glow">S</div>
                 <div>
                   <p className="text-lg font-black text-ink">SplitWise Pro</p>
-                  <p className="text-xs text-ink/55">Shared money, calmer endings</p>
+                  <p className="text-xs text-ink/55">Smart shared-money workspace</p>
                 </div>
               </div>
-              <div className="mt-6 rounded-lg border border-ink/10 bg-white p-3">
+              <div className="mt-6 rounded-lg border border-ink/10 bg-white/90 p-3 shadow-sm">
                 <p className="text-xs font-semibold uppercase text-ink/50">Signed in as</p>
                 <div className="mt-2 flex items-center gap-3">
-                  <div className="grid h-9 w-9 place-items-center rounded-lg bg-secondary text-sm font-bold text-white">{initials}</div>
+                  <div className="grid h-9 w-9 place-items-center rounded-lg bg-accent text-sm font-bold text-white">{initials}</div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-ink">{user?.name ?? "User"}</p>
                     <p className="truncate text-xs text-ink/55">{user?.email ?? "Loading profile"}</p>
                   </div>
                 </div>
               </div>
-              <div className="mt-4 rounded-lg border border-primary/15 bg-primary/8 p-3">
+              <div className="mt-4 rounded-lg border border-primary/15 bg-primary/10 p-3">
                 <div className="flex items-center gap-2 text-sm font-bold text-primary">
                   <Sparkles className="h-4 w-4" />
-                  Demo ready
+                  Built-in demo data
                 </div>
-                <p className="mt-1 text-xs leading-5 text-ink/60">Try `aisha@example.com` with `password123` to see groups, budgets and settlements already filled in.</p>
+                <p className="mt-1 text-xs leading-5 text-ink/60">Use aisha@example.com with password123 to inspect groups, budgets, imports and settlements.</p>
+              </div>
+              <div className="mt-4 rounded-lg border border-secondary/20 bg-secondary/10 p-3">
+                <div className="flex items-center gap-2 text-sm font-bold text-secondary">
+                  <TrendingUp className="h-4 w-4" />
+                  This month
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg bg-white/80 p-2">
+                    <p className="font-semibold text-ink/50">Tracked</p>
+                    <p className="mt-1 text-base font-black text-ink">INR 82k</p>
+                  </div>
+                  <div className="rounded-lg bg-white/80 p-2">
+                    <p className="font-semibold text-ink/50">Open</p>
+                    <p className="mt-1 text-base font-black text-ink">4 pays</p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -66,7 +82,7 @@ export function AppShell() {
                   end={to === "/app"}
                   className={({ isActive }) =>
                     `flex h-11 shrink-0 items-center gap-3 rounded-lg px-3 text-sm font-semibold transition ${
-                      isActive ? "bg-ink text-white shadow-glow" : "text-ink/65 hover:bg-white hover:text-ink hover:shadow-card"
+                      isActive ? "bg-ink text-white shadow-card" : "text-ink/65 hover:bg-white hover:text-ink hover:shadow-card"
                     }`
                   }
                   title={label}

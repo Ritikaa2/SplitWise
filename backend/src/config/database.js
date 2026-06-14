@@ -1,200 +1,373 @@
-const fs = require("node:fs");
-const path = require("node:path");
-const { DatabaseSync } = require("node:sqlite");
+const { AsyncLocalStorage } = require("node:async_hooks");
+const mysql = require("mysql2/promise");
 const { hashPassword } = require("../utils/security");
 const { convertToInr, round2 } = require("../utils/money");
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "..", "data");
-const DB_PATH = process.env.DATABASE_PATH || path.join(DATA_DIR, "splitwise.sqlite");
+const DB_CONFIG = {
+  host: process.env.DB_HOST || "127.0.0.1",
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  database: process.env.DB_NAME || "splitwise_pro",
+};
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
-const db = new DatabaseSync(DB_PATH);
-db.exec("PRAGMA foreign_keys = ON");
+let pool;
+const transactionStore = new AsyncLocalStorage();
 
-function addColumnIfMissing(table, column, definition) {
-  const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((item) => item.name === column);
-  if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+function normalizeSql(sql) {
+  return String(sql)
+    .replace(/(?<!`)\bgroups\b(?!`)/g, "`groups`")
+    .replace(/\bINSERT OR IGNORE INTO\b/gi, "INSERT IGNORE INTO");
 }
 
-function initDb() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      hashed_password TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+function activeClient() {
+  if (!pool) throw new Error("Database has not been initialized");
+  return transactionStore.getStore() || pool;
+}
 
-    CREATE TABLE IF NOT EXISTS groups (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
+async function execute(sql, params = []) {
+  const [result] = await activeClient().execute(normalizeSql(sql), params);
+  return result;
+}
+
+const db = {
+  prepare(sql) {
+    return {
+      async all(...params) {
+        return execute(sql, params);
+      },
+      async get(...params) {
+        const rows = await execute(sql, params);
+        return rows[0] || null;
+      },
+      async run(...params) {
+        const result = await execute(sql, params);
+        return {
+          lastInsertRowid: result.insertId,
+          changes: result.affectedRows,
+        };
+      },
+    };
+  },
+  async exec(sql) {
+    await activeClient().query(normalizeSql(sql));
+  },
+};
+
+async function createPool() {
+  const bootstrap = await mysql.createConnection({
+    host: DB_CONFIG.host,
+    port: DB_CONFIG.port,
+    user: DB_CONFIG.user,
+    password: DB_CONFIG.password,
+    multipleStatements: true,
+  });
+  await bootstrap.query(`CREATE DATABASE IF NOT EXISTS \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  await bootstrap.end();
+
+  pool = mysql.createPool({
+    ...DB_CONFIG,
+    waitForConnections: true,
+    connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
+    decimalNumbers: true,
+    dateStrings: true,
+    multipleStatements: true,
+  });
+}
+
+async function runInTransaction(work) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await transactionStore.run(connection, work);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+function assertIdentifier(value) {
+  if (!/^[a-z_]+$/i.test(value)) throw new Error(`Unsafe SQL identifier: ${value}`);
+}
+
+async function addColumnIfMissing(table, column, definition) {
+  assertIdentifier(table);
+  assertIdentifier(column);
+  const rows = await db.prepare(
+    "SELECT COLUMN_NAME FROM information_schema.columns WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?"
+  ).all(table, column);
+  if (!rows.length) await db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+}
+
+async function initDb() {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      hashed_password VARCHAR(255) NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_users_email (email)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+    CREATE TABLE IF NOT EXISTS password_otps (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      otp_hash VARCHAR(255) NOT NULL,
+      expires_at DATETIME NOT NULL,
+      consumed_at DATETIME NULL,
+      attempts INT NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_password_otps_email (email),
+      INDEX idx_password_otps_expires (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+    CREATE TABLE IF NOT EXISTS currencies (
+      code VARCHAR(10) PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      symbol VARCHAR(10) NOT NULL,
+      rate_to_inr DECIMAL(15, 6) NOT NULL DEFAULT 1,
+      precision_digits INT NOT NULL DEFAULT 2,
+      active TINYINT(1) NOT NULL DEFAULT 1,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+    CREATE TABLE IF NOT EXISTS \`groups\` (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
       description TEXT,
-      default_currency TEXT NOT NULL DEFAULT 'INR',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+      default_currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+      emoji VARCHAR(50) NOT NULL DEFAULT 'Wallet',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS group_members (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      group_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      joined_at TEXT NOT NULL,
-      left_at TEXT,
-      FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      group_id INT NOT NULL,
+      user_id INT NOT NULL,
+      joined_at DATE NOT NULL,
+      left_at DATE NULL,
+      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_member_group_user (group_id, user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS expenses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      group_id INTEGER NOT NULL,
-      title TEXT NOT NULL,
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      group_id INT NOT NULL,
+      title VARCHAR(255) NOT NULL,
       description TEXT,
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'INR',
-      converted_amount_inr REAL NOT NULL,
-      date TEXT NOT NULL,
-      paid_by_id INTEGER NOT NULL,
-      split_type TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
-      FOREIGN KEY(paid_by_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+      amount DECIMAL(15, 2) NOT NULL,
+      currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+      converted_amount_inr DECIMAL(15, 2) NOT NULL,
+      date DATE NOT NULL,
+      paid_by_id INT NOT NULL,
+      split_type VARCHAR(50) NOT NULL,
+      category VARCHAR(100) NOT NULL DEFAULT 'General',
+      merchant VARCHAR(255) NOT NULL DEFAULT '',
+      is_recurring TINYINT(1) NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
+      FOREIGN KEY(paid_by_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_expense_group (group_id),
+      INDEX idx_expense_date (date),
+      INDEX idx_expense_paid_by (paid_by_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS expense_participants (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      expense_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      amount_owed REAL NOT NULL,
-      share_value REAL,
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      expense_id INT NOT NULL,
+      user_id INT NOT NULL,
+      amount_owed DECIMAL(15, 2) NOT NULL,
+      share_value DECIMAL(15, 2) NULL,
       FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_participant_expense (expense_id),
+      INDEX idx_participant_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS settlements (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      group_id INTEGER NOT NULL,
-      payer_id INTEGER NOT NULL,
-      payee_id INTEGER NOT NULL,
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'INR',
-      converted_amount_inr REAL NOT NULL,
-      date TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      group_id INT NOT NULL,
+      payer_id INT NOT NULL,
+      payee_id INT NOT NULL,
+      amount DECIMAL(15, 2) NOT NULL,
+      currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+      converted_amount_inr DECIMAL(15, 2) NOT NULL,
+      date DATE NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
       FOREIGN KEY(payer_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(payee_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+      FOREIGN KEY(payee_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_settlement_group (group_id),
+      INDEX idx_settlement_payer (payer_id),
+      INDEX idx_settlement_payee (payee_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS budgets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      group_id INTEGER NOT NULL,
-      category TEXT NOT NULL,
-      monthly_limit REAL NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'INR',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
-    );
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      group_id INT NOT NULL,
+      category VARCHAR(100) NOT NULL,
+      monthly_limit DECIMAL(15, 2) NOT NULL,
+      currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
+      INDEX idx_budget_group (group_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS import_sessions (
-      id TEXT PRIMARY KEY,
-      group_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'VALIDATED',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
+      id VARCHAR(255) PRIMARY KEY,
+      group_id INT NOT NULL,
+      user_id INT NOT NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'VALIDATED',
+      rows_count INT NOT NULL DEFAULT 0,
+      imported_count INT NOT NULL DEFAULT 0,
+      skipped_count INT NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+    CREATE TABLE IF NOT EXISTS import_rows (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      session_id VARCHAR(255) NOT NULL,
+      row_number INT NOT NULL,
+      raw_data JSON NOT NULL,
+      row_hash VARCHAR(64) NOT NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+      action_taken VARCHAR(50) NULL,
+      created_expense_id INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(session_id) REFERENCES import_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY(created_expense_id) REFERENCES expenses(id) ON DELETE SET NULL,
+      UNIQUE KEY uq_import_row (session_id, row_number),
+      INDEX idx_import_rows_session (session_id),
+      INDEX idx_import_rows_hash (row_hash)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS import_anomalies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      row_number INTEGER NOT NULL,
-      field_name TEXT,
-      issue TEXT NOT NULL,
-      severity TEXT NOT NULL,
-      raw_data TEXT NOT NULL,
-      resolved INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY(session_id) REFERENCES import_sessions(id) ON DELETE CASCADE
-    );
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      session_id VARCHAR(255) NOT NULL,
+      row_number INT NOT NULL,
+      field_name VARCHAR(100),
+      issue VARCHAR(500) NOT NULL,
+      severity VARCHAR(50) NOT NULL,
+      recommended_action VARCHAR(50) NOT NULL DEFAULT 'REVIEW',
+      action_taken VARCHAR(50) NULL,
+      raw_data JSON NOT NULL,
+      resolved TINYINT(1) NOT NULL DEFAULT 0,
+      FOREIGN KEY(session_id) REFERENCES import_sessions(id) ON DELETE CASCADE,
+      INDEX idx_anomaly_session (session_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS audit_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      action TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      entity_id INTEGER,
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NULL,
+      action VARCHAR(255) NOT NULL,
+      entity_type VARCHAR(100) NOT NULL,
+      entity_id INT NULL,
       details TEXT,
-      timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+      timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
+      INDEX idx_audit_timestamp (timestamp)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
-  addColumnIfMissing("groups", "emoji", "TEXT NOT NULL DEFAULT 'Wallet'");
-  addColumnIfMissing("expenses", "category", "TEXT NOT NULL DEFAULT 'General'");
-  addColumnIfMissing("expenses", "merchant", "TEXT NOT NULL DEFAULT ''");
-  addColumnIfMissing("expenses", "is_recurring", "INTEGER NOT NULL DEFAULT 0");
+  await addColumnIfMissing("groups", "emoji", "VARCHAR(50) NOT NULL DEFAULT 'Wallet'");
+  await addColumnIfMissing("expenses", "category", "VARCHAR(100) NOT NULL DEFAULT 'General'");
+  await addColumnIfMissing("expenses", "merchant", "VARCHAR(255) NOT NULL DEFAULT ''");
+  await addColumnIfMissing("expenses", "is_recurring", "TINYINT(1) NOT NULL DEFAULT 0");
+  await addColumnIfMissing("import_sessions", "rows_count", "INT NOT NULL DEFAULT 0");
+  await addColumnIfMissing("import_sessions", "imported_count", "INT NOT NULL DEFAULT 0");
+  await addColumnIfMissing("import_sessions", "skipped_count", "INT NOT NULL DEFAULT 0");
+  await addColumnIfMissing("import_anomalies", "recommended_action", "VARCHAR(50) NOT NULL DEFAULT 'REVIEW'");
+  await addColumnIfMissing("import_anomalies", "action_taken", "VARCHAR(50) NULL");
+
+  await db.prepare(`
+    INSERT INTO currencies (code, name, symbol, rate_to_inr, precision_digits, active)
+    VALUES
+      ('INR', 'Indian Rupee', 'INR', 1.000000, 2, 1),
+      ('USD', 'US Dollar', 'USD', 83.000000, 2, 1)
+    ON DUPLICATE KEY UPDATE
+      name = VALUES(name),
+      symbol = VALUES(symbol),
+      rate_to_inr = VALUES(rate_to_inr),
+      precision_digits = VALUES(precision_digits),
+      active = VALUES(active)
+  `).run();
 }
 
-function seedDemoData() {
-  const seeded = db.prepare(`
+async function seedDemoData() {
+  const seeded = (await db.prepare(`
     SELECT COUNT(*) AS count
-    FROM groups
-    WHERE name IN ('Home Circle', 'Goa Weekend', 'Studio Snacks')
-  `).get().count;
-  if (seeded >= 3) return;
+    FROM \`groups\`
+    WHERE name IN ('Home Circle', 'Goa Weekend', 'Studio Snacks', 'Tech Summit 2026')
+  `).get()).count;
+  if (seeded >= 4) return;
 
-  const insertUser = db.prepare("INSERT OR IGNORE INTO users (name, email, hashed_password) VALUES (?, ?, ?)");
+  const insertUser = db.prepare("INSERT IGNORE INTO users (name, email, hashed_password) VALUES (?, ?, ?)");
   const users = [
     ["Aisha Kapoor", "aisha@example.com"],
     ["Rohan Mehta", "rohan@example.com"],
     ["Priya Nair", "priya@example.com"],
     ["Sam Dsouza", "sam@example.com"],
     ["Meera Shah", "meera@example.com"],
+    ["Arjun Verma", "arjun@example.com"],
+    ["Sneha Reddy", "sneha@example.com"],
   ];
   const userIds = new Map();
 
-  const tx = db.transaction(() => {
+  await runInTransaction(async () => {
     for (const [name, email] of users) {
-      insertUser.run(name, email, hashPassword("password123"));
-      userIds.set(email, db.prepare("SELECT id FROM users WHERE email = ?").get(email).id);
+      await insertUser.run(name, email, hashPassword("password123"));
+      userIds.set(email, (await db.prepare("SELECT id FROM users WHERE email = ?").get(email)).id);
     }
 
     const groups = [
       ["Home Circle", "Everyday bills for people who share a kitchen, a calendar and a lot of small payments.", "INR", "Home"],
       ["Goa Weekend", "A friendly trip tab with rooms, fuel, food and a couple of card payments in USD.", "INR", "Plane"],
       ["Studio Snacks", "Lunches, subscriptions and supplies for a small creative team.", "INR", "Briefcase"],
+      ["Tech Summit 2026", "Business travel, registration fees, and networking events for the annual conference.", "USD", "Laptop"],
     ];
-    const insertGroup = db.prepare("INSERT INTO groups (name, description, default_currency, emoji) VALUES (?, ?, ?, ?)");
+    const insertGroup = db.prepare("INSERT INTO `groups` (name, description, default_currency, emoji) VALUES (?, ?, ?, ?)");
     const insertMember = db.prepare("INSERT INTO group_members (group_id, user_id, joined_at, left_at) VALUES (?, ?, ?, ?)");
     const insertBudget = db.prepare("INSERT INTO budgets (group_id, category, monthly_limit, currency) VALUES (?, ?, ?, ?)");
     const groupIds = [];
-    groups.forEach((group) => {
-      const existing = db.prepare("SELECT id FROM groups WHERE name = ?").get(group[0]);
-      groupIds.push(existing ? existing.id : Number(insertGroup.run(...group).lastInsertRowid));
-    });
+    for (const group of groups) {
+      const existing = await db.prepare("SELECT id FROM `groups` WHERE name = ?").get(group[0]);
+      groupIds.push(existing ? existing.id : Number((await insertGroup.run(...group)).lastInsertRowid));
+    }
 
     for (const groupId of groupIds) {
       for (const [email, joinedAt] of [["aisha@example.com", "2026-01-01"], ["rohan@example.com", "2026-01-01"], ["priya@example.com", "2026-01-10"]]) {
-        const exists = db.prepare("SELECT id FROM group_members WHERE group_id = ? AND user_id = ?").get(groupId, userIds.get(email));
-        if (!exists) insertMember.run(groupId, userIds.get(email), joinedAt, null);
+        const exists = await db.prepare("SELECT id FROM group_members WHERE group_id = ? AND user_id = ?").get(groupId, userIds.get(email));
+        if (!exists) await insertMember.run(groupId, userIds.get(email), joinedAt, null);
       }
     }
-    [
+    for (const [groupId, email, joinedAt, leftAt] of [
       [groupIds[0], "sam@example.com", "2026-04-15", null],
       [groupIds[0], "meera@example.com", "2026-01-01", "2026-03-31"],
       [groupIds[1], "sam@example.com", "2026-05-01", null],
-    ].forEach(([groupId, email, joinedAt, leftAt]) => {
-      const exists = db.prepare("SELECT id FROM group_members WHERE group_id = ? AND user_id = ?").get(groupId, userIds.get(email));
-      if (!exists) insertMember.run(groupId, userIds.get(email), joinedAt, leftAt);
-    });
+    ]) {
+      const exists = await db.prepare("SELECT id FROM group_members WHERE group_id = ? AND user_id = ?").get(groupId, userIds.get(email));
+      if (!exists) await insertMember.run(groupId, userIds.get(email), joinedAt, leftAt);
+    }
 
-    [
+    for (const budget of [
       [groupIds[0], "Rent", 60000, "INR"],
       [groupIds[0], "Groceries", 22000, "INR"],
       [groupIds[0], "Utilities", 12000, "INR"],
       [groupIds[1], "Travel", 45000, "INR"],
       [groupIds[2], "Office", 18000, "INR"],
-    ].forEach((budget) => insertBudget.run(...budget));
+    ]) {
+      await insertBudget.run(...budget);
+    }
 
     const expenses = [
       [groupIds[0], "June rent", "Shared apartment rent", 60000, "INR", "2026-06-03", userIds.get("aisha@example.com"), "EQUAL", "Rent", "Owner transfer", 1, ["aisha@example.com", "rohan@example.com", "priya@example.com", "sam@example.com"]],
@@ -205,37 +378,43 @@ function seedDemoData() {
       [groupIds[1], "Cafe card swipe", "USD payment converted to INR", 86, "USD", "2026-05-19", userIds.get("aisha@example.com"), "EQUAL", "Food", "Salt Cafe", 0, ["aisha@example.com", "rohan@example.com", "priya@example.com", "sam@example.com"]],
       [groupIds[2], "Figma subscription", "Team design subscription", 120, "USD", "2026-06-01", userIds.get("rohan@example.com"), "EQUAL", "Software", "Figma", 1, ["aisha@example.com", "rohan@example.com", "priya@example.com"]],
       [groupIds[2], "Client lunch", "Discovery workshop", 4850, "INR", "2026-06-06", userIds.get("priya@example.com"), "EQUAL", "Meals", "Olive Bistro", 0, ["aisha@example.com", "rohan@example.com", "priya@example.com"]],
+      [groupIds[3], "Summit Pass", "Early bird tickets", 1500, "USD", "2026-06-10", userIds.get("arjun@example.com"), "EQUAL", "Education", "Eventbrite", 0, ["aisha@example.com", "arjun@example.com", "sneha@example.com"]],
+      [groupIds[3], "Hotel Hilton", "3-night corporate stay", 900, "USD", "2026-06-12", userIds.get("sneha@example.com"), "EQUAL", "Travel", "Hilton", 0, ["aisha@example.com", "arjun@example.com", "sneha@example.com"]],
+      [groupIds[0], "High-speed Fiber", "Airtel Monthly", 1200, "INR", "2026-06-14", userIds.get("rohan@example.com"), "EQUAL", "Utilities", "Airtel", 1, ["aisha@example.com", "rohan@example.com", "priya@example.com", "sam@example.com"]],
+      [groupIds[0], "Zomato Party", "Friday night pizza", 2400, "INR", "2026-06-13", userIds.get("aisha@example.com"), "PERCENTAGE", "Food", "Zomato", 0, ["aisha@example.com", "rohan@example.com", "priya@example.com"]],
     ];
 
     for (const expense of expenses) {
       const [groupId, title, description, amount, currency, date, paidById, splitType, category, merchant, isRecurring, emails] = expense;
       const converted = convertToInr(amount, currency);
-      const result = db.prepare(`
+      const result = await db.prepare(`
         INSERT INTO expenses (group_id, title, description, amount, currency, converted_amount_inr, date, paid_by_id, split_type, category, merchant, is_recurring)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(groupId, title, description, amount, currency, converted, date, paidById, splitType, category, merchant, isRecurring);
       const expenseId = Number(result.lastInsertRowid);
       const share = round2(Number(amount) / emails.length);
-      emails.forEach((email, index) => {
+      for (const [index, email] of emails.entries()) {
         const amountOwed = index === emails.length - 1 ? round2(Number(amount) - share * (emails.length - 1)) : share;
-        db.prepare("INSERT INTO expense_participants (expense_id, user_id, amount_owed, share_value) VALUES (?, ?, ?, ?)")
+        await db.prepare("INSERT INTO expense_participants (expense_id, user_id, amount_owed, share_value) VALUES (?, ?, ?, ?)")
           .run(expenseId, userIds.get(email), amountOwed, null);
-      });
+      }
     }
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO settlements (group_id, payer_id, payee_id, amount, currency, converted_amount_inr, date)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(groupIds[0], userIds.get("rohan@example.com"), userIds.get("aisha@example.com"), 5000, "INR", 5000, "2026-06-12");
 
-    db.prepare("INSERT INTO audit_logs (user_id, action, entity_type, details) VALUES (?, 'DEMO_SEEDED', 'system', ?)")
+    await db.prepare("INSERT INTO audit_logs (user_id, action, entity_type, details) VALUES (?, 'DEMO_SEEDED', 'system', ?)")
       .run(userIds.get("aisha@example.com"), "Demo workspace created with users, groups, budgets, expenses and one settlement.");
   });
-
-  tx();
 }
 
-initDb();
-seedDemoData();
+async function initDatabase() {
+  if (pool) return;
+  await createPool();
+  await initDb();
+  await seedDemoData();
+}
 
-module.exports = { db, DB_PATH };
+module.exports = { db, DB_CONFIG, initDatabase, runInTransaction };
