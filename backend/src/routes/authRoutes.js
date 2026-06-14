@@ -1,16 +1,13 @@
 const express = require("express");
-const controller = require("../controllers/authController");
-const { requireAuth } = require("../middleware/auth");
-const { asyncHandler } = require("../utils/errors");
-
 const router = express.Router();
+const ctrl = require("../controllers/authController");
+const { authenticate } = require("../middleware/auth");
 
-router.post("/register", asyncHandler(controller.register));
-router.post("/login", asyncHandler(controller.login));
-router.post("/password/forgot", asyncHandler(controller.forgotPassword));
-router.post("/password/reset", asyncHandler(controller.resetPassword));
-router.post("/google", asyncHandler(controller.googleLogin));
-router.get("/me", requireAuth, asyncHandler(controller.me));
-router.post("/logout", asyncHandler(controller.logout));
+router.post("/register", ctrl.register);
+router.post("/login", ctrl.login);
+router.post("/password/forgot", ctrl.forgotPassword);
+router.post("/password/reset", ctrl.resetPassword);
+router.get("/me", authenticate, ctrl.me);
+router.post("/logout", authenticate, ctrl.logout);
 
 module.exports = router;

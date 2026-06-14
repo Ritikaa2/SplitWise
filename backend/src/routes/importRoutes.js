@@ -1,12 +1,10 @@
 const express = require("express");
-const controller = require("../controllers/importController");
-const { requireAuth } = require("../middleware/auth");
-const { asyncHandler } = require("../utils/errors");
-
 const router = express.Router();
+const ctrl = require("../controllers/importController");
+const { authenticate } = require("../middleware/auth");
 
-router.use(requireAuth);
-router.post("/groups/:groupId/sessions", express.raw({ type: () => true, limit: "10mb" }), asyncHandler(controller.upload));
-router.post("/sessions/:sessionId/approve", asyncHandler(controller.approve));
+router.use(authenticate);
+router.post("/groups/:groupId/sessions", ctrl.upload);
+router.post("/sessions/:id/approve", ctrl.approve);
 
 module.exports = router;

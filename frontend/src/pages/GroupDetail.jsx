@@ -34,54 +34,62 @@ export default function GroupDetail() {
   });
 
   return (
-    <div className="grid gap-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase text-primary">Group detail</p>
-          <h1 className="mt-1 text-3xl font-black text-slate-950">{group?.name ?? "Group"}</h1>
-          <p className="mt-1 text-slate-500">{group?.description ?? "Overview of balances, members, expenses, settlements, and reports."}</p>
+          <h1 className="text-2xl font-bold text-ink">{group?.name ?? "Group"}</h1>
+          <p className="text-sm text-ink-lighter mt-1">{group?.description ?? "Group details and management"}</p>
         </div>
-        <span className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white">{group?.default_currency ?? "INR"}</span>
+        <span className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-white">{group?.default_currency ?? "INR"}</span>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto">
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-ink-border pb-0.5">
         {tabs.map((item) => (
-          <Button key={item} variant={tab === item ? "dark" : "secondary"} onClick={() => setTab(item)}>
+          <button
+            key={item}
+            onClick={() => setTab(item)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+              tab === item
+                ? "bg-white text-ink border border-ink-border border-b-white -mb-px"
+                : "text-ink-lighter hover:text-ink"
+            }`}
+          >
             {item}
-          </Button>
+          </button>
         ))}
       </div>
 
       {tab === "Overview" && (
-        <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
-          <Card>
-            <h2 className="font-bold text-slate-950">Net Balances</h2>
-            <p className="mt-1 text-sm text-slate-500">Positive means the member should receive money. Negative means they owe.</p>
-            <div className="mt-5 grid gap-3">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="p-6">
+            <h2 className="font-semibold text-ink mb-1">Net Balances</h2>
+            <p className="text-sm text-ink-lighter mb-4">Positive means receive, negative means owe</p>
+            <div className="space-y-2">
               {(balances?.balances ?? []).map((item) => (
-                <div key={item.user_id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-background p-3">
-                  <span className="font-semibold text-slate-800">User {item.user_id}</span>
-                  <span className={`font-black ${item.amount >= 0 ? "text-success" : "text-danger"}`}>{money(item.amount)}</span>
+                <div key={item.user_id} className="flex items-center justify-between rounded-lg border border-ink-border bg-surface-secondary p-3">
+                  <span className="text-sm font-medium text-ink">User {item.user_id}</span>
+                  <span className={`font-semibold ${item.amount >= 0 ? "text-success" : "text-danger"}`}>{money(item.amount)}</span>
                 </div>
               ))}
-              {!(balances?.balances ?? []).length && <p className="text-sm text-slate-500">No balances yet.</p>}
+              {!(balances?.balances ?? []).length && <p className="text-sm text-ink-lighter">No balances yet.</p>}
             </div>
           </Card>
-          <Card>
-            <h2 className="font-bold text-slate-950">Settlement Plan</h2>
-            <p className="mt-1 text-sm text-slate-500">Aisha-style final answer: who pays whom.</p>
-            <div className="mt-5 grid gap-3">
+          <Card className="p-6">
+            <h2 className="font-semibold text-ink mb-1">Settlement Plan</h2>
+            <p className="text-sm text-ink-lighter mb-4">Who pays whom</p>
+            <div className="space-y-2">
               {(balances?.settlement_plan ?? []).map((item) => (
-                <div key={`${item.from_user_id}-${item.to_user_id}-${item.amount}`} className="rounded-lg bg-slate-950 p-4 text-white">
-                  <p className="font-bold">{item.from_user_name} pays {item.to_user_name}</p>
-                  <p className="mt-1 text-2xl font-black">{money(item.amount)}</p>
+                <div key={`${item.from_user_id}-${item.to_user_id}`} className="rounded-lg bg-surface-tertiary p-4">
+                  <p className="text-sm font-medium text-ink">{item.from_user_name} pays {item.to_user_name}</p>
+                  <p className="mt-1 text-xl font-bold text-primary">{money(item.amount)}</p>
                 </div>
               ))}
               {!(balances?.settlement_plan ?? []).length && (
-                <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm font-semibold text-success">
+                <div className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success">
                   <CheckCircle2 className="h-4 w-4" />
                   Everyone is settled.
-                </p>
+                </div>
               )}
             </div>
           </Card>
@@ -89,85 +97,85 @@ export default function GroupDetail() {
       )}
 
       {tab === "Expenses" && (
-        <Card>
-          <h2 className="font-bold text-slate-950">Expense Ledger</h2>
-          <div className="mt-5 grid gap-3">
+        <Card className="p-6">
+          <h2 className="font-semibold text-ink mb-4">Expense Ledger</h2>
+          <div className="space-y-2">
             {expenses.map((expense) => (
-              <div key={expense.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-background p-3">
+              <div key={expense.id} className="flex items-center justify-between rounded-lg border border-ink-border bg-surface-secondary p-3">
                 <div className="flex items-center gap-3">
                   <Receipt className="h-4 w-4 text-primary" />
                   <div>
-                    <p className="font-semibold text-slate-900">{expense.title}</p>
-                    <p className="text-sm text-slate-500">{expense.date} - {expense.split_type}</p>
+                    <p className="text-sm font-medium text-ink">{expense.title}</p>
+                    <p className="text-xs text-ink-lighter">{expense.date} &middot; {expense.split_type}</p>
                   </div>
                 </div>
-                <span className="font-bold text-slate-950">{expense.amount} {expense.currency}</span>
+                <span className="font-semibold text-ink">{expense.amount} {expense.currency}</span>
               </div>
             ))}
-            {!expenses.length && <p className="text-sm text-slate-500">No expenses yet. Import CSV or create expenses manually.</p>}
+            {!expenses.length && <p className="text-sm text-ink-lighter">No expenses yet.</p>}
           </div>
         </Card>
       )}
 
       {tab === "Members" && (
-        <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
-          <Card>
-            <h2 className="font-bold text-slate-950">Membership Timeline</h2>
-            <div className="mt-5 grid gap-3">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="p-6">
+            <h2 className="font-semibold text-ink mb-4">Members</h2>
+            <div className="space-y-2">
               {(group?.members ?? []).map((member) => (
-                <div key={member.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-background p-3">
+                <div key={member.id} className="flex items-center justify-between rounded-lg border border-ink-border bg-surface-secondary p-3">
                   <div>
-                    <p className="font-semibold text-slate-900">{member.user.name}</p>
-                    <p className="text-sm text-slate-500">Joined {member.joined_at}{member.left_at ? ` - Left ${member.left_at}` : " - Active"}</p>
+                    <p className="text-sm font-medium text-ink">{member.user.name}</p>
+                    <p className="text-xs text-ink-lighter">Joined {member.joined_at}{member.left_at ? ` - Left ${member.left_at}` : " - Active"}</p>
                   </div>
                   {!member.left_at && (
-                    <Button variant="ghost" onClick={() => removeMember.mutate(member.user_id)} title="Mark member as left">
+                    <button onClick={() => removeMember.mutate(member.user_id)} className="text-ink-lighter hover:text-danger transition" title="Remove member">
                       <UserMinus className="h-4 w-4" />
-                    </Button>
+                    </button>
                   )}
                 </div>
               ))}
             </div>
           </Card>
-          <Card>
-            <h2 className="font-bold text-slate-950">Add member</h2>
+          <Card className="p-6">
+            <h2 className="font-semibold text-ink mb-4">Add member</h2>
             <form
-              className="mt-5 grid gap-3"
+              className="space-y-3"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (memberEmail) addMember.mutate();
               }}
             >
               <Input type="email" placeholder="sam@example.com" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} />
-              <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                Join date
+              <div>
+                <label className="block text-sm text-ink-lighter mb-1">Join date</label>
                 <Input type="date" value={joinedAt} onChange={(event) => setJoinedAt(event.target.value)} />
-              </label>
-              <Button disabled={!memberEmail || addMember.isPending}>
+              </div>
+              <Button disabled={!memberEmail || addMember.isPending} className="w-full">
                 <UserPlus className="h-4 w-4" />
                 Add member
               </Button>
               {addMember.error && <p className="text-sm text-danger">{addMember.error.message}</p>}
             </form>
-            <p className="mt-4 flex gap-2 text-sm text-slate-500">
-              <CalendarPlus className="mt-0.5 h-4 w-4 text-primary" />
-              Join dates protect Sam from old expenses and Meera from new ones.
+            <p className="mt-3 flex gap-2 text-xs text-ink-lighter">
+              <CalendarPlus className="h-4 w-4" />
+              Join dates protect members from old expenses
             </p>
           </Card>
         </div>
       )}
 
       {tab === "Settlements" && (
-        <Card>
-          <h2 className="font-bold text-slate-950">Settlements</h2>
-          <p className="mt-2 text-sm text-slate-500">Use the settlement plan above to record payments and reduce open balances.</p>
+        <Card className="p-6">
+          <h2 className="font-semibold text-ink">Settlements</h2>
+          <p className="mt-1 text-sm text-ink-lighter">Use the settlement plan above to record payments and reduce open balances.</p>
         </Card>
       )}
 
       {tab === "Reports" && (
-        <Card>
-          <h2 className="font-bold text-slate-950">Explainability</h2>
-          <p className="mt-2 text-sm text-slate-500">Reports expose each member balance and the expenses that produced it for live walkthroughs.</p>
+        <Card className="p-6">
+          <h2 className="font-semibold text-ink">Explainability</h2>
+          <p className="mt-1 text-sm text-ink-lighter">Reports expose each member balance and the expenses that produced it.</p>
         </Card>
       )}
     </div>

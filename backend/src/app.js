@@ -1,32 +1,39 @@
 const express = require("express");
-const { cors } = require("./middleware/cors");
-const { errorHandler, notFound } = require("./middleware/errorHandler");
+const cors = require("cors");
+require("dotenv").config();
+
 const authRoutes = require("./routes/authRoutes");
 const groupRoutes = require("./routes/groupRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
+const settlementRoutes = require("./routes/settlementRoutes");
 const importRoutes = require("./routes/importRoutes");
 const reportRoutes = require("./routes/reportRoutes");
-const settlementRoutes = require("./routes/settlementRoutes");
 
 const app = express();
 
-app.use(cors);
-app.use((req, res, next) => {
-  if (req.is("multipart/form-data")) return next();
-  return express.json({ limit: "2mb" })(req, res, next);
-});
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.get("/health", (_req, res) => res.json({ status: "healthy", service: "SplitWise Pro Express API" }));
-app.get("/", (_req, res) => res.json({ name: "SplitWise Pro", api: "/api", runtime: "Node.js + Express" }));
-
+// API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/expenses", expenseRoutes);
+app.use("/api/settlements", settlementRoutes);
 app.use("/api/import", importRoutes);
 app.use("/api/reports", reportRoutes);
-app.use("/api/settlements", settlementRoutes);
 
-app.use(notFound);
-app.use(errorHandler);
+// Health check
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    error: err.message || "Internal server error"
+  });
+});
 
 module.exports = app;

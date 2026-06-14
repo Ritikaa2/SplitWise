@@ -1,13 +1,9 @@
 const express = require("express");
-const controller = require("../controllers/reportController");
-const { requireAuth } = require("../middleware/auth");
-const { asyncHandler } = require("../utils/errors");
-
 const router = express.Router();
+const ctrl = require("../controllers/reportController");
+const { authenticate } = require("../middleware/auth");
 
-router.use(requireAuth);
-router.get("/dashboard", asyncHandler(controller.dashboardReport));
-router.get("/groups/:groupId/balances", asyncHandler(controller.balances));
-router.get("/audit", asyncHandler(controller.audit));
+router.use(authenticate);
+router.get("/dashboard", ctrl.dashboard);
 
 module.exports = router;

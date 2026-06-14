@@ -1,15 +1,13 @@
 const express = require("express");
-const controller = require("../controllers/expenseController");
-const { requireAuth } = require("../middleware/auth");
-const { asyncHandler } = require("../utils/errors");
-
 const router = express.Router();
+const ctrl = require("../controllers/expenseController");
+const { authenticate } = require("../middleware/auth");
 
-router.use(requireAuth);
-router.get("/groups/:groupId", asyncHandler(controller.index));
-router.post("/groups/:groupId", asyncHandler(controller.create));
-router.get("/:expenseId", asyncHandler(controller.show));
-router.put("/:expenseId", asyncHandler(controller.update));
-router.delete("/:expenseId", asyncHandler(controller.destroy));
+router.use(authenticate);
+router.get("/groups/:groupId", ctrl.list);
+router.post("/groups/:groupId", ctrl.create);
+router.put("/:id", ctrl.update);
+router.delete("/:id", ctrl.remove);
+router.get("/groups/:groupId/balances", ctrl.balances);
 
 module.exports = router;

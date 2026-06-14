@@ -1,18 +1,25 @@
 const app = require("./app");
-const { DB_CONFIG, initDatabase } = require("./config/database");
+const poolPromise = require("./config/database");
+const initDb = require("./config/initDb");
 
-const PORT = Number(process.env.PORT || 8000);
+const PORT = process.env.PORT || 8000;
 
 async function start() {
-  await initDatabase();
-  app.listen(PORT, () => {
-    console.log(`SplitWise Pro Express API running at http://localhost:${PORT}`);
-    console.log(`MySQL database: ${DB_CONFIG.user}@${DB_CONFIG.host}:${DB_CONFIG.port}/${DB_CONFIG.database}`);
-  });
+  try {
+    const pool = await poolPromise;
+    await initDb(pool);
+    const conn = await pool.getConnection();
+    console.log("✅ MySQL connected successfully");
+    conn.release();
+    
+    app.listen(PORT, () => {
+      console.log(`✅ Server running on http://localhost:${PORT}`);
+      console.log(`✅ API available at http://localhost:${PORT}/api`);
+    });
+  } catch (err) {
+    console.error("❌ Failed to start server:", err.message);
+    process.exit(1);
+  }
 }
 
-start().catch((error) => {
-  console.error("Failed to start SplitWise Pro API");
-  console.error(error);
-  process.exit(1);
-});
+start();

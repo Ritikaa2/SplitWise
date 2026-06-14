@@ -59,19 +59,18 @@ export default function Expenses() {
   });
 
   return (
-    <div className="grid gap-6">
+    <div className="space-y-6">
       <div>
-        <p className="text-sm font-semibold uppercase text-primary">Expense ledger</p>
-        <h1 className="mt-1 text-3xl font-black text-slate-950">Create and inspect expenses</h1>
-        <p className="mt-1 text-slate-500">Supports the split types present in the CSV: equal, exact, percentage, and shares.</p>
+        <h1 className="text-2xl font-bold text-ink">Expenses</h1>
+        <p className="text-sm text-ink-lighter mt-1">Create and manage expenses with split types</p>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[440px_1fr]">
-        <Card>
-          <h2 className="font-bold text-slate-950">Create expense</h2>
-          <div className="mt-5 grid gap-3">
+      <div className="grid gap-6 xl:grid-cols-[440px_1fr]">
+        <Card className="p-6">
+          <h2 className="font-semibold text-ink mb-5">Create expense</h2>
+          <div className="space-y-3">
             <select
-              className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="field"
               value={groupId}
               onChange={(event) => setGroupId(event.target.value)}
             >
@@ -82,26 +81,26 @@ export default function Expenses() {
             <Input placeholder="Description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
             <div className="grid grid-cols-2 gap-3">
               <Input type="number" min="0" step="0.01" placeholder="Amount" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} />
-              <select className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value })}>
+              <select className="field" value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value })}>
                 <option value="INR">INR</option>
                 <option value="USD">USD</option>
               </select>
             </div>
             <Input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
-            <select className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" value={form.paid_by_id} onChange={(event) => setForm({ ...form, paid_by_id: event.target.value })}>
+            <select className="field" value={form.paid_by_id} onChange={(event) => setForm({ ...form, paid_by_id: event.target.value })}>
               <option value="">Paid by</option>
               {activeMembers.map((member) => <option key={member.user_id} value={member.user_id}>{member.user.name}</option>)}
             </select>
-            <select className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" value={form.split_type} onChange={(event) => setForm({ ...form, split_type: event.target.value })}>
+            <select className="field" value={form.split_type} onChange={(event) => setForm({ ...form, split_type: event.target.value })}>
               {splitTypes.map(([type]) => <option key={type} value={type}>{type}</option>)}
             </select>
 
-            <div className="grid gap-2 rounded-lg border border-slate-200 bg-background p-3">
-              <p className="text-sm font-bold text-slate-800">Participants</p>
+            <div className="rounded-lg border border-ink-border bg-surface-secondary p-3 space-y-2">
+              <p className="text-sm font-medium text-ink">Participants</p>
               {activeMembers.map((member) => (
-                <label key={member.user_id} className="grid grid-cols-[1fr_120px] items-center gap-3 text-sm text-slate-700">
+                <label key={member.user_id} className="grid grid-cols-[1fr_120px] items-center gap-3 text-sm text-ink-light">
                   <span className="flex items-center gap-2">
-                    <input type="checkbox" checked={Boolean(selected[member.user_id])} onChange={(event) => setSelected({ ...selected, [member.user_id]: event.target.checked })} />
+                    <input type="checkbox" checked={Boolean(selected[member.user_id])} onChange={(event) => setSelected({ ...selected, [member.user_id]: event.target.checked })} className="rounded border-ink-border text-primary" />
                     {member.user.name}
                   </span>
                   <Input
@@ -117,7 +116,7 @@ export default function Expenses() {
               ))}
             </div>
 
-            <Button disabled={!canCreate || create.isPending} onClick={() => create.mutate()}>
+            <Button disabled={!canCreate || create.isPending} className="w-full">
               <Plus className="h-4 w-4" />
               Create expense
             </Button>
@@ -125,37 +124,39 @@ export default function Expenses() {
           </div>
         </Card>
 
-        <div className="grid gap-4">
-          <div className="grid gap-3 md:grid-cols-4">
+        <div className="space-y-6">
+          {/* Split types */}
+          <div className="grid gap-3 md:grid-cols-2">
             {splitTypes.map(([type, copy]) => (
               <Card key={type} className="p-4">
-                <Calculator className="mb-3 h-5 w-5 text-primary" />
-                <h2 className="font-bold text-slate-950">{type}</h2>
-                <p className="mt-2 text-sm leading-5 text-slate-500">{copy}</p>
+                <Calculator className="mb-2 h-5 w-5 text-primary" />
+                <h3 className="font-semibold text-ink">{type}</h3>
+                <p className="mt-1 text-sm text-ink-lighter">{copy}</p>
               </Card>
             ))}
           </div>
 
-          <Card>
-            <div className="mb-4 flex items-center gap-2">
+          {/* Current ledger */}
+          <Card className="p-6">
+            <div className="flex items-center gap-2 mb-4">
               <ReceiptText className="h-5 w-5 text-primary" />
-              <h2 className="font-bold text-slate-950">Current group ledger</h2>
+              <h2 className="font-semibold text-ink">Current ledger</h2>
             </div>
-            <div className="grid gap-3">
+            <div className="space-y-2">
               {expenses.map((expense) => (
-                <div key={expense.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-background p-3">
+                <div key={expense.id} className="flex items-center justify-between rounded-lg border border-ink-border bg-surface-secondary p-3 text-sm">
                   <div>
-                    <p className="font-semibold text-slate-950">{expense.title}</p>
-                    <p className="text-sm text-slate-500">{expense.date} - {expense.currency} - {expense.split_type}</p>
+                    <p className="font-medium text-ink">{expense.title}</p>
+                    <p className="text-ink-lighter">{expense.date} &middot; {expense.currency} &middot; {expense.split_type}</p>
                   </div>
-                  <span className="font-bold text-slate-950">{money(Number(expense.converted_amount_inr ?? expense.amount))}</span>
+                  <span className="font-semibold text-ink">{money(Number(expense.converted_amount_inr ?? expense.amount))}</span>
                 </div>
               ))}
               {!expenses.length && (
-                <p className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-background p-5 text-sm text-slate-500">
+                <div className="flex items-center gap-2 rounded-lg border border-dashed border-ink-border bg-surface-secondary p-5 text-sm text-ink-lighter">
                   <CheckSquare className="h-4 w-4 text-primary" />
-                  Select a group to view expenses or create the first one.
-                </p>
+                  Select a group to view expenses
+                </div>
               )}
             </div>
           </Card>

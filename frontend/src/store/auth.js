@@ -11,6 +11,7 @@ export const useAuth = create((set) => ({
         storage.setItem("splitwise_token", nextToken);
         set({ token: nextToken, user, remember });
     },
+    setUser: (user) => set({ user }),
     logout: () => {
         localStorage.removeItem("splitwise_token");
         sessionStorage.removeItem("splitwise_token");

@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { useAuth } from "./store/auth";
+import { api } from "./lib/api";
 import Dashboard from "./pages/Dashboard";
 import Expenses from "./pages/Expenses";
 import GroupDetail from "./pages/GroupDetail";
@@ -13,24 +14,47 @@ import ForgotPassword from "./pages/ForgotPassword";
 import Register from "./pages/Register";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+
+function AuthHydrator() {
+    const token = useAuth((s) => s.token);
+    const user = useAuth((s) => s.user);
+    const setUser = useAuth((s) => s.setUser);
+    const logout = useAuth((s) => s.logout);
+
+    useEffect(() => {
+        if (!token || user) return;
+        api.me()
+            .then(setUser)
+            .catch(() => logout());
+    }, [token, user, setUser, logout]);
+
+    return null;
+}
+
 function Protected() {
     const token = useAuth((s) => s.token);
     return token ? <AppShell /> : <Navigate to="/login" replace/>;
 }
+
 export default function App() {
-    return (<Routes>
-      <Route path="/" element={<Landing />}/>
-      <Route path="/login" element={<Login />}/>
-      <Route path="/forgot-password" element={<ForgotPassword />}/>
-      <Route path="/register" element={<Register />}/>
-      <Route path="/app" element={<Protected />}>
-        <Route index element={<Dashboard />}/>
-        <Route path="groups" element={<Groups />}/>
-        <Route path="groups/:id" element={<GroupDetail />}/>
-        <Route path="expenses" element={<Expenses />}/>
-        <Route path="import" element={<ImportWizard />}/>
-        <Route path="reports" element={<Reports />}/>
-        <Route path="settings" element={<Settings />}/>
-      </Route>
-    </Routes>);
+    return (
+        <>
+            <AuthHydrator />
+            <Routes>
+                <Route path="/" element={<Landing />}/>
+                <Route path="/login" element={<Login />}/>
+                <Route path="/forgot-password" element={<ForgotPassword />}/>
+                <Route path="/register" element={<Register />}/>
+                <Route path="/app" element={<Protected />}>
+                    <Route index element={<Dashboard />}/>
+                    <Route path="groups" element={<Groups />}/>
+                    <Route path="groups/:id" element={<GroupDetail />}/>
+                    <Route path="expenses" element={<Expenses />}/>
+                    <Route path="import" element={<ImportWizard />}/>
+                    <Route path="reports" element={<Reports />}/>
+                    <Route path="settings" element={<Settings />}/>
+                </Route>
+            </Routes>
+        </>
+    );
 }

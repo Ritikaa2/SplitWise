@@ -1,96 +1,123 @@
-const crypto = require("node:crypto");
-const { HttpError } = require("../utils/errors");
-const { createToken, hashPassword, verifyPassword, verifyToken } = require("../utils/security");
-const {
-  consumePasswordOtp,
-  createUser,
-  findUserByEmail,
-  rowToUser,
-  savePasswordOtp,
-  updatePassword,
-} = require("../models/userModel");
+const bcrypt = require("bcryptjs");
+const getPool = require("../utils/getPool");
+const { generateToken } = require("../middleware/auth");
 
-function hashOtp(email, otp) {
-  return crypto
-    .createHash("sha256")
-    .update(`${String(email).toLowerCase()}:${otp}:${process.env.JWT_SECRET || "splitwise-pro-node-secret-change-me"}`)
-    .digest("hex");
-}
+const OTP_EXPIRY_MINUTES = 10;
 
-function makeOtp() {
-  return String(crypto.randomInt(100000, 1000000));
-}
+exports.register = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password || password.length < 8) {
+      return res.status(400).json({ error: "Name, email, and password (8+ chars) required" });
+    }
+    const pool = await getPool();
+    const [existing] = await pool.query("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
+    if (existing.length) return res.status(400).json({ error: "Email already registered" });
 
-async function deliverOtp(email, otp) {
-  if (process.env.SMTP_HOST) {
-    console.log(`[email-otp] SMTP configured for ${email}. OTP: ${otp}`);
-    return;
+    const hashed = await bcrypt.hash(password, 10);
+    const [result] = await pool.query("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [name, email.toLowerCase(), hashed]);
+    const token = generateToken(result.insertId);
+    res.status(201).json({ token, user: { id: result.insertId, name, email: email.toLowerCase() } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  console.log(`[email-otp] Password reset OTP for ${email}: ${otp}`);
-}
+};
 
-async function register(req, res) {
-  const body = req.body || {};
-  if (!body.name || !body.email || String(body.password || "").length < 8) {
-    throw new HttpError(400, "Name, valid email, and 8 character password are required");
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const pool = await getPool();
+    const [users] = await pool.query("SELECT * FROM users WHERE email = ?", [email?.toLowerCase()]);
+    if (!users.length) return res.status(401).json({ error: "Invalid email or password" });
+
+    const valid = await bcrypt.compare(password, users[0].password);
+    if (!valid) return res.status(401).json({ error: "Invalid email or password" });
+
+    const token = generateToken(users[0].id);
+    res.json({ token, user: { id: users[0].id, name: users[0].name, email: users[0].email } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  const user = await createUser({ name: body.name, email: body.email, hashedPassword: hashPassword(body.password) });
-  res.status(201).json({ access_token: createToken(user.email), token_type: "bearer", user: rowToUser(user) });
-}
+};
 
-async function login(req, res) {
-  const body = req.body || {};
-  const user = await findUserByEmail(body.email);
-  if (!user || !verifyPassword(body.password || "", user.hashed_password)) throw new HttpError(401, "Incorrect email or password");
-  res.json({ access_token: createToken(user.email), token_type: "bearer", user: rowToUser(user) });
-}
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required" });
 
-async function forgotPassword(req, res) {
-  const email = String(req.body?.email || "").toLowerCase();
-  const user = await findUserByEmail(email);
-  if (!user) {
-    return res.json({ message: "If this email exists, a 6-digit OTP has been sent." });
+    const pool = await getPool();
+    const normalizedEmail = email.toLowerCase();
+    const [users] = await pool.query("SELECT id FROM users WHERE email = ?", [normalizedEmail]);
+
+    if (!users.length) {
+      return res.json({ message: "If the email exists, reset instructions have been sent." });
+    }
+
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otpHash = await bcrypt.hash(otp, 10);
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+    await pool.query("UPDATE password_otps SET used = TRUE WHERE user_id = ? AND used = FALSE", [users[0].id]);
+    await pool.query(
+      "INSERT INTO password_otps (user_id, otp_hash, expires_at) VALUES (?, ?, ?)",
+      [users[0].id, otpHash, expiresAt]
+    );
+
+    console.log(`[DEV] Password reset OTP for ${normalizedEmail}: ${otp}`);
+
+    const response = {
+      message: "OTP sent to your email",
+      expires_in_minutes: OTP_EXPIRY_MINUTES,
+    };
+    if (process.env.NODE_ENV !== "production") {
+      response.dev_otp = otp;
+    }
+    res.json(response);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  const otp = makeOtp();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ");
-  await savePasswordOtp(user.id, user.email, hashOtp(user.email, otp), expiresAt);
-  await deliverOtp(user.email, otp);
-  res.json({
-    message: "If this email exists, a 6-digit OTP has been sent.",
-    expires_in_minutes: 10,
-    dev_otp: process.env.NODE_ENV === "production" ? undefined : otp,
-  });
-}
+};
 
-async function resetPassword(req, res) {
-  const password = req.body?.password || "";
-  if (String(password).length < 8) throw new HttpError(400, "Password must be at least 8 characters");
+exports.resetPassword = async (req, res) => {
+  try {
+    const { otp, password, email } = req.body;
+    if (!otp || !password || !email) {
+      return res.status(400).json({ error: "Email, OTP, and new password are required" });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    }
 
-  let email = "";
-  if (req.body?.token) {
-    email = verifyToken(req.body.token, "password_reset");
-    if (!email) throw new HttpError(400, "Reset link is invalid or expired");
-  } else {
-    email = String(req.body?.email || "").toLowerCase();
-    const otp = String(req.body?.otp || "");
-    if (!email || !/^\d{6}$/.test(otp)) throw new HttpError(400, "Email and 6-digit OTP are required");
-    await consumePasswordOtp(email, hashOtp(email, otp));
+    const pool = await getPool();
+    const normalizedEmail = email.toLowerCase();
+    const [users] = await pool.query("SELECT id FROM users WHERE email = ?", [normalizedEmail]);
+    if (!users.length) return res.status(400).json({ error: "Invalid or expired OTP" });
+
+    const [otps] = await pool.query(
+      `SELECT id, otp_hash FROM password_otps
+       WHERE user_id = ? AND used = FALSE AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [users[0].id]
+    );
+    if (!otps.length) return res.status(400).json({ error: "Invalid or expired OTP" });
+
+    const validOtp = await bcrypt.compare(String(otp).trim(), otps[0].otp_hash);
+    if (!validOtp) return res.status(400).json({ error: "Invalid or expired OTP" });
+
+    const hashed = await bcrypt.hash(password, 10);
+    await pool.query("UPDATE users SET password = ? WHERE id = ?", [hashed, users[0].id]);
+    await pool.query("UPDATE password_otps SET used = TRUE WHERE id = ?", [otps[0].id]);
+
+    res.json({ message: "Password updated successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
+};
 
-  await updatePassword(email, hashPassword(password));
-  res.json({ message: "Password updated successfully" });
-}
+exports.me = async (req, res) => {
+  res.json({ user: req.user });
+};
 
-async function googleLogin() {
-  throw new HttpError(501, "Google sign-in needs GOOGLE_CLIENT_ID and token verification before it can be enabled");
-}
-
-async function me(req, res) {
-  res.json(rowToUser(req.user));
-}
-
-async function logout(_req, res) {
-  res.json({ message: "Token discarded on client" });
-}
-
-module.exports = { register, login, forgotPassword, resetPassword, googleLogin, me, logout };
+exports.logout = (req, res) => {
+  res.json({ message: "Logged out successfully" });
+};

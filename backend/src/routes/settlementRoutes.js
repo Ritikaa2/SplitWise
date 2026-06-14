@@ -1,12 +1,10 @@
 const express = require("express");
-const controller = require("../controllers/settlementController");
-const { requireAuth } = require("../middleware/auth");
-const { asyncHandler } = require("../utils/errors");
-
 const router = express.Router();
+const ctrl = require("../controllers/settlementController");
+const { authenticate } = require("../middleware/auth");
 
-router.use(requireAuth);
-router.get("/groups/:groupId", asyncHandler(controller.index));
-router.post("/groups/:groupId", asyncHandler(controller.create));
+router.use(authenticate);
+router.get("/groups/:groupId", ctrl.list);
+router.post("/groups/:groupId", ctrl.create);
 
 module.exports = router;
