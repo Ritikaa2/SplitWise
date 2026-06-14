@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS currencies (
   updated_at TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS `groups` (
+CREATE TABLE IF NOT EXISTS \`groups\` (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(191) NOT NULL,
   description TEXT,
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   merchant VARCHAR(191) NOT NULL DEFAULT '',
   is_recurring TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NULL,
-  FOREIGN KEY(group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
   FOREIGN KEY(paid_by_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS settlements (
   converted_amount_inr DECIMAL(15,2) NOT NULL,
   date DATE NOT NULL,
   created_at TIMESTAMP NULL,
-  FOREIGN KEY(group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
   FOREIGN KEY(payer_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY(payee_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS budgets (
   monthly_limit DECIMAL(15,2) NOT NULL,
   currency VARCHAR(10) NOT NULL DEFAULT 'INR',
   created_at TIMESTAMP NULL,
-  FOREIGN KEY(group_id) REFERENCES `groups`(id) ON DELETE CASCADE
+  FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS import_sessions (
@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS import_sessions (
   imported_count INT NOT NULL DEFAULT 0,
   skipped_count INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP NULL,
-  FOREIGN KEY(group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  FOREIGN KEY(group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -241,7 +241,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   timestamp TIMESTAMP NULL,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 `);
 
   await addColumnIfMissing("groups", "emoji", "VARCHAR(50) NOT NULL DEFAULT 'Wallet'");
@@ -255,25 +254,25 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   await addColumnIfMissing("import_anomalies", "action_taken", "VARCHAR(50) NULL");
 
   await db.prepare(`
-    INSERT INTO currencies (code, name, symbol, rate_to_inr, precision_digits, active)
-    VALUES
-      ('INR', 'Indian Rupee', 'INR', 1.000000, 2, 1),
-      ('USD', 'US Dollar', 'USD', 83.000000, 2, 1)
-    ON DUPLICATE KEY UPDATE
-      name = VALUES(name),
-      symbol = VALUES(symbol),
-      rate_to_inr = VALUES(rate_to_inr),
-      precision_digits = VALUES(precision_digits),
-      active = VALUES(active)
-  `).run();
+     INSERT INTO currencies (code, name, symbol, rate_to_inr, precision_digits, active)
+     VALUES
+       ('INR', 'Indian Rupee', 'INR', 1.000000, 2, 1),
+       ('USD', 'US Dollar', 'USD', 83.000000, 2, 1)
+     ON DUPLICATE KEY UPDATE
+       name = VALUES(name),
+       symbol = VALUES(symbol),
+       rate_to_inr = VALUES(rate_to_inr),
+       precision_digits = VALUES(precision_digits),
+       active = VALUES(active)
+   `).run();
 }
 
 async function seedDemoData() {
   const seeded = (await db.prepare(`
-    SELECT COUNT(*) AS count
-    FROM \`groups\`
-    WHERE name IN ('Home Circle', 'Goa Weekend', 'Studio Snacks', 'Tech Summit 2026')
-  `).get()).count;
+     SELECT COUNT(*) AS count
+     FROM \`groups\`
+     WHERE name IN ('Home Circle', 'Goa Weekend', 'Studio Snacks', 'Tech Summit 2026')
+   `).get()).count;
   if (seeded >= 4) return;
 
   const insertUser = db.prepare("INSERT IGNORE INTO users (name, email, hashed_password) VALUES (?, ?, ?)");
@@ -353,9 +352,9 @@ async function seedDemoData() {
       const [groupId, title, description, amount, currency, date, paidById, splitType, category, merchant, isRecurring, emails] = expense;
       const converted = convertToInr(amount, currency);
       const result = await db.prepare(`
-        INSERT INTO expenses (group_id, title, description, amount, currency, converted_amount_inr, date, paid_by_id, split_type, category, merchant, is_recurring)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(groupId, title, description, amount, currency, converted, date, paidById, splitType, category, merchant, isRecurring);
+         INSERT INTO expenses (group_id, title, description, amount, currency, converted_amount_inr, date, paid_by_id, split_type, category, merchant, is_recurring)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       `).run(groupId, title, description, amount, currency, converted, date, paidById, splitType, category, merchant, isRecurring);
       const expenseId = Number(result.lastInsertRowid);
       const share = round2(Number(amount) / emails.length);
       for (const [index, email] of emails.entries()) {
@@ -366,9 +365,9 @@ async function seedDemoData() {
     }
 
     await db.prepare(`
-      INSERT INTO settlements (group_id, payer_id, payee_id, amount, currency, converted_amount_inr, date)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(groupIds[0], userIds.get("rohan@example.com"), userIds.get("aisha@example.com"), 5000, "INR", 5000, "2026-06-12");
+       INSERT INTO settlements (group_id, payer_id, payee_id, amount, currency, converted_amount_inr, date)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+     `).run(groupIds[0], userIds.get("rohan@example.com"), userIds.get("aisha@example.com"), 5000, "INR", 5000, "2026-06-12");
 
     await db.prepare("INSERT INTO audit_logs (user_id, action, entity_type, details) VALUES (?, 'DEMO_SEEDED', 'system', ?)")
       .run(userIds.get("aisha@example.com"), "Demo workspace created with users, groups, budgets, expenses and one settlement.");
