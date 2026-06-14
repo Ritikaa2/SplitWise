@@ -9,6 +9,7 @@ import {
   FileCheck2,
   Loader2,
   LockKeyhole,
+  WalletCards,
   Mail
 } from "lucide-react";
 import { api } from "../lib/api";

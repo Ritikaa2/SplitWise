@@ -10,6 +10,7 @@ import {
   FileWarning,
   Loader2,
   LockKeyhole,
+  WalletCards,
   Mail
 } from "lucide-react";
 import { api } from "../lib/api";
