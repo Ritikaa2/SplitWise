@@ -1,7 +1,15 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
-import { Chrome, Eye, EyeOff, FileCheck2, Loader2, LockKeyhole, Mail, ShieldCheck, UserRound, UsersRound, WalletCards } from "lucide-react";
+import {
+  Globe,
+  Eye,
+  EyeOff,
+  FileCheck2,
+  Loader2,
+  LockKeyhole,
+  Mail
+} from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../store/auth";
 import { Button } from "../components/ui/Button";
@@ -98,7 +106,7 @@ export default function Register() {
             }}
             disabled={google.isPending}
           >
-            {google.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Chrome className="h-4 w-4" />}
+            {google.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
             Sign up with Google
           </Button>
           {googleMessage && <p className="mt-2 text-sm text-warning">{googleMessage}</p>}
