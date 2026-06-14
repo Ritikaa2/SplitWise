@@ -242,6 +242,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+`);
+
   await addColumnIfMissing("groups", "emoji", "VARCHAR(50) NOT NULL DEFAULT 'Wallet'");
   await addColumnIfMissing("expenses", "category", "VARCHAR(100) NOT NULL DEFAULT 'General'");
   await addColumnIfMissing("expenses", "merchant", "VARCHAR(255) NOT NULL DEFAULT ''");
