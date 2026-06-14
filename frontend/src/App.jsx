@@ -8,6 +8,7 @@ import Groups from "./pages/Groups";
 import ImportWizard from "./pages/ImportWizard";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
 import Register from "./pages/Register";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
@@ -19,6 +20,7 @@ export default function App() {
     return (<Routes>
       <Route path="/" element={<Landing />}/>
       <Route path="/login" element={<Login />}/>
+      <Route path="/forgot-password" element={<ForgotPassword />}/>
       <Route path="/register" element={<Register />}/>
       <Route path="/app" element={<Protected />}>
         <Route index element={<Dashboard />}/>

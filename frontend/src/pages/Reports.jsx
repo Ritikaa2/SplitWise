@@ -1,12 +1,41 @@
-import { Download } from "lucide-react";
+import { Download, FileSpreadsheet, ListChecks, Route, UserRoundSearch } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
+
+const reportTypes = [
+  ["Group Balance Reports", "Creditors, debtors, settlement plan, and net balances in INR.", FileSpreadsheet],
+  ["Individual Explainability", "Expense contribution, amount paid, amount owed, and running calculation.", UserRoundSearch],
+  ["Import Report", "Every anomaly detected, action selected, and final import outcome.", ListChecks],
+  ["Live Session Trace", "A reviewer can walk from CSV row to service policy to database record.", Route],
+];
+
 export default function Reports() {
-    return (<div className="grid gap-6">
-      <div><h1 className="text-3xl font-bold">Reports</h1><p className="text-slate-400">Group balances, individual reports, and export-ready summaries.</p></div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card><h2 className="font-semibold">Group Balance Reports</h2><p className="mt-2 text-sm text-slate-400">Creditors, debtors, settlement plan, and net balances in INR.</p><Button className="mt-5"><Download className="h-4 w-4"/>PDF Export</Button></Card>
-        <Card><h2 className="font-semibold">Individual Reports</h2><p className="mt-2 text-sm text-slate-400">Expense contribution, amount paid, amount owed, and running calculation.</p><Button className="mt-5" variant="secondary"><Download className="h-4 w-4"/>Excel Export</Button></Card>
+  return (
+    <div className="grid gap-6">
+      <div>
+        <p className="text-sm font-semibold uppercase text-primary">Reports</p>
+        <h1 className="mt-1 text-3xl font-black text-slate-950">Audit-ready summaries</h1>
+        <p className="mt-1 text-slate-500">Designed for the 45-minute live review: balances, import decisions, and explanations in one place.</p>
       </div>
-    </div>);
+      <div className="grid gap-4 md:grid-cols-2">
+        {reportTypes.map(([title, copy, Icon], index) => (
+          <Card key={title}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-bold text-slate-950">{title}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">{copy}</p>
+              </div>
+              <div className="rounded-lg bg-primary/10 p-3 text-primary">
+                <Icon className="h-5 w-5" />
+              </div>
+            </div>
+            <Button className="mt-5" variant={index === 0 ? "primary" : "secondary"}>
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
 }
