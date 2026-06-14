@@ -1,3 +1,4 @@
+import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, FileUp, Home, LogOut, Settings, Sparkles, TrendingUp, Users, WalletCards } from "lucide-react";

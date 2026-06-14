@@ -1,3 +1,4 @@
+import React from "react";
 import { money } from "../../lib/utils";
 export function BarChart({ data }) {
     const max = Math.max(...data.map((d) => d.amount), 1);
