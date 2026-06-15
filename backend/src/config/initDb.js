@@ -8,10 +8,10 @@ async function initDb(pool) {
   await pool.query(schema);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS password_otps (
-     
-    )
-  `);
+  CREATE TABLE IF NOT EXISTS password_otps (
+   
+  )
+`);
 
   const demoHash = await bcrypt.hash("password123", 10);
   const demoUsers = [
