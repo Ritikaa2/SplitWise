@@ -1,17 +1,17 @@
 const app = require("./app");
-const poolPromise = require("./config/database");
+const pool = require("./config/database");
 const initDb = require("./config/initDb");
 
 const PORT = process.env.PORT || 8000;
 
 async function start() {
   try {
-    const pool = await poolPromise;
     await initDb(pool);
+
     const conn = await pool.getConnection();
     console.log("✅ MySQL connected successfully");
     conn.release();
-    
+
     app.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
       console.log(`✅ API available at http://localhost:${PORT}/api`);
