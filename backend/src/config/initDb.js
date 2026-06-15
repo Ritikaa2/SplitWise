@@ -9,14 +9,7 @@ async function initDb(pool) {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_otps (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NOT NULL,
-      otp_hash VARCHAR(255) NOT NULL,
-      expires_at TIMESTAMP NOT NULL,
-      used BOOLEAN DEFAULT FALSE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      INDEX idx_user_expires (user_id, expires_at)
+     
     )
   `);
 
