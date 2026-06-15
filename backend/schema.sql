@@ -1,7 +1,3 @@
--- SplitWise Database Schema
-
-CREATE DATABASE IF NOT EXISTS splitwise;
-USE splitwise;
 
 -- Users
 CREATE TABLE IF NOT EXISTS users (
