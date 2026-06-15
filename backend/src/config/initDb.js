@@ -18,7 +18,7 @@ async function initDb(pool) {
 
   for (const [name, email] of demoUsers) {
     await pool.query(
-      `INSERT INTO users (name, email, hashed_password)
+      `INSERT INTO users (name, email, password)
 VALUES (?, ?, ?)
 ON DUPLICATE KEY UPDATE
 hashed_password = VALUES(hashed_password),
