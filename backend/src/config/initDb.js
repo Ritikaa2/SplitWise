@@ -18,14 +18,11 @@ async function initDb(pool) {
 
   for (const [name, email] of demoUsers) {
     await pool.query(
-      `await pool.query(
-  `INSERT INTO users (name, email, password)
-   VALUES (?, ?, ?)
-   ON DUPLICATE KEY UPDATE
-   password = VALUES(password),
-   name = VALUES(name)`,
-  [name, email, demoHash]
-);`,
+      `INSERT INTO users (name, email, password)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+       password = VALUES(password),
+       name = VALUES(name)`,
       [name, email, demoHash]
     );
   }
