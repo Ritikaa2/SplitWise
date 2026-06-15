@@ -124,10 +124,17 @@ CREATE TABLE IF NOT EXISTS anomaly_logs (
 );
 
 -- Seed currencies
-INSERT IGNORE INTO currencies (code, name, symbol, rate) VALUES
-('INR', 'Indian Rupee', '₹', 1),
-('USD', 'US Dollar', '$', 83);
+INSERT INTO currencies (code, name, symbol, rate)
+SELECT 'INR', 'Indian Rupee', '₹', 1
+WHERE NOT EXISTS (
+  SELECT 1 FROM currencies WHERE code='INR'
+);
 
+INSERT INTO currencies (code, name, symbol, rate)
+SELECT 'USD', 'US Dollar', '$', 83
+WHERE NOT EXISTS (
+  SELECT 1 FROM currencies WHERE code='USD'
+);
 -- Seed exchange rates
 INSERT IGNORE INTO exchange_rates (from_currency, to_currency, rate, date) VALUES
 ('USD', 'INR', 83, CURDATE()),
