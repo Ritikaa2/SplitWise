@@ -83,9 +83,11 @@ CREATE TABLE IF NOT EXISTS currencies (
   code VARCHAR(10) PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   symbol VARCHAR(10) NOT NULL,
-  rate DECIMAL(15,6) NOT NULL DEFAULT 1
+  rate_to_inr DECIMAL(15,6) NOT NULL DEFAULT 1,
+  precision_digits INT DEFAULT 2,
+  active BOOLEAN DEFAULT TRUE,
+  updated_at TIMESTAMP NULL
 );
-
 -- Exchange Rates
 CREATE TABLE IF NOT EXISTS exchange_rates (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -124,9 +126,11 @@ CREATE TABLE IF NOT EXISTS anomaly_logs (
 );
 
 -- Seed currencies
-INSERT IGNORE INTO currencies (code, name, symbol, rate) VALUES
-('INR', 'Indian Rupee', '₹', 1),
-('USD', 'US Dollar', '$', 83);
+INSERT IGNORE INTO currencies
+(code, name, symbol, rate_to_inr)
+VALUES
+('INR', 'Indian Rupee', 'INR', 1),
+('USD', 'US Dollar', 'USD', 83);
 -- Seed exchange rates
 INSERT IGNORE INTO exchange_rates (from_currency, to_currency, rate, date) VALUES
 ('USD', 'INR', 83, CURDATE()),
