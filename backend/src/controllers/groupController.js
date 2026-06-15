@@ -3,16 +3,16 @@ const { convertCurrency } = require("../utils/convertCurrency");
 
 exports.list = async (req, res) => {
   const [groups] = await pool.query(`
-    SELECT g.*, 
+    SELECT g.*,
            COUNT(DISTINCT gm.user_id) as member_count,
            COALESCE(SUM(e.converted_amount_inr), 0) as total_spend
     FROM \`groups\` g
-    JOIN group_members gm_user 
-      ON gm_user.group_id = g.id 
+    JOIN group_members gm_user
+      ON gm_user.group_id = g.id
       AND gm_user.user_id = ?
-    LEFT JOIN group_members gm 
+    LEFT JOIN group_members gm
       ON gm.group_id = g.id
-    LEFT JOIN expenses e 
+    LEFT JOIN expenses e
       ON e.group_id = g.id
     GROUP BY g.id
     ORDER BY g.created_at DESC
@@ -57,62 +57,77 @@ exports.get = async (req, res) => {
 };
 
 exports.create = async (req, res) => {
-  const { name, description, default_currency = "INR" } = req.body;
+  try {
+    const {
+      name,
+      description,
+      default_currency = "INR",
+      emoji = "👥"
+    } = req.body;
 
-  const [result] = await pool.query(
-    `INSERT INTO \`groups\`
-     (name, description, default_currency, created_by)
-     VALUES (?, ?, ?, ?)`,
-    [name, description || "", default_currency, req.user.id]
-  );
+    const [result] = await pool.query(
+      `INSERT INTO \`groups\`
+       (name, description, default_currency, emoji)
+       VALUES (?, ?, ?, ?)`,
+      [
+        name,
+        description || "",
+        default_currency,
+        emoji
+      ]
+    );
 
-  const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
 
-  await pool.query(
-    `INSERT INTO group_members
-     (group_id, user_id, joined_at)
-     VALUES (?, ?, ?)`,
-    [result.insertId, req.user.id, today]
-  );
+    await pool.query(
+      `INSERT INTO group_members
+       (group_id, user_id, joined_at)
+       VALUES (?, ?, ?)`,
+      [result.insertId, req.user.id, today]
+    );
 
-  if (req.body.members?.length) {
-    for (const member of req.body.members) {
-      const [users] = await pool.query(
-        "SELECT id FROM users WHERE email = ?",
-        [member.email?.toLowerCase()]
-      );
-
-      if (users.length) {
-        await pool.query(
-          `INSERT IGNORE INTO group_members
-           (group_id, user_id, joined_at)
-           VALUES (?, ?, ?)`,
-          [
-            result.insertId,
-            users[0].id,
-            member.joined_at || today
-          ]
+    if (req.body.members?.length) {
+      for (const member of req.body.members) {
+        const [users] = await pool.query(
+          "SELECT id FROM users WHERE email = ?",
+          [member.email?.toLowerCase()]
         );
+
+        if (users.length) {
+          await pool.query(
+            `INSERT IGNORE INTO group_members
+             (group_id, user_id, joined_at)
+             VALUES (?, ?, ?)`,
+            [
+              result.insertId,
+              users[0].id,
+              member.joined_at || today
+            ]
+          );
+        }
       }
     }
+
+    const [group] = await pool.query(
+      "SELECT * FROM `groups` WHERE id = ?",
+      [result.insertId]
+    );
+
+    res.status(201).json(group[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
-
-  const [group] = await pool.query(
-    "SELECT * FROM `groups` WHERE id = ?",
-    [result.insertId]
-  );
-
-  res.status(201).json(group[0]);
 };
 
 exports.update = async (req, res) => {
-  const { name, description, default_currency } = req.body;
+  const { name, description, default_currency, emoji } = req.body;
 
   await pool.query(
     `UPDATE \`groups\`
-     SET name = ?, description = ?, default_currency = ?
+     SET name = ?, description = ?, default_currency = ?, emoji = ?
      WHERE id = ?`,
-    [name, description, default_currency, req.params.id]
+    [name, description, default_currency, emoji, req.params.id]
   );
 
   const [groups] = await pool.query(
